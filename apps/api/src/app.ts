@@ -19,6 +19,11 @@ import {
   SESSION_COOKIE_NAME,
   sessionCookieOptions,
 } from '@ogroup/web-security';
+import {
+  mountProtectedSessionRoutes,
+  mountPublicAccountRoutes,
+  type AccountHttpDependencies,
+} from './account-http.js';
 
 export interface AppDependencies {
   sessionStore: SessionStore;
@@ -30,6 +35,7 @@ export interface AppDependencies {
   loginRateLimiter: RateLimiter;
   sessionTtlMs: number;
   secureCookies: boolean;
+  accountLifecycle?: AccountHttpDependencies;
 }
 
 type SessionTokenSource = 'bearer' | 'cookie';
@@ -62,20 +68,12 @@ function sameOrigin(request: Request): boolean {
 }
 
 function loginInput(body: unknown): { email: string; password: string } | null {
-  if (!body || typeof body !== 'object') {
-    return null;
-  }
-
+  if (!body || typeof body !== 'object') return null;
   const candidate = body as Record<string, unknown>;
-  if (typeof candidate.email !== 'string' || typeof candidate.password !== 'string') {
-    return null;
-  }
+  if (typeof candidate.email !== 'string' || typeof candidate.password !== 'string') return null;
 
   const email = candidate.email.trim().toLowerCase();
-  if (!email || !candidate.password) {
-    return null;
-  }
-
+  if (!email || !candidate.password) return null;
   return { email, password: candidate.password };
 }
 
@@ -88,35 +86,26 @@ async function recordAudit(sink: AuditSink, event: ReturnType<typeof createAudit
 }
 
 export function createApp(dependencies: AppDependencies) {
-  if (dependencies.sessionTtlMs <= 0) {
-    throw new Error('INVALID_SESSION_TTL');
-  }
+  if (dependencies.sessionTtlMs <= 0) throw new Error('INVALID_SESSION_TTL');
 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/v1/health', (_request, response) => {
-    response.status(200).json({
-      data: { status: 'ok' },
-      meta: {},
-    });
+    response.status(200).json({ data: { status: 'ok' }, meta: {} });
   });
 
   app.post('/api/v1/auth/login', async (request, response, next) => {
     try {
       if (!sameOrigin(request)) {
-        response.status(403).json({
-          error: { code: 'CSRF_FAILED', message: 'Request origin could not be verified.' },
-        });
+        response.status(403).json({ error: { code: 'CSRF_FAILED', message: 'Request origin could not be verified.' } });
         return;
       }
 
       const input = loginInput(request.body as unknown);
       if (!input) {
-        response.status(400).json({
-          error: { code: 'VALIDATION_ERROR', message: 'Invalid login request.' },
-        });
+        response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Invalid login request.' } });
         return;
       }
 
@@ -126,14 +115,9 @@ export function createApp(dependencies: AppDependencies) {
         response.setHeader('Retry-After', String(decision.retryAfterSeconds));
         await recordAudit(
           dependencies.auditSink,
-          createAuditEvent({
-            action: 'auth.login.rate_limited',
-            metadata: { transport: 'cookie' },
-          }),
+          createAuditEvent({ action: 'auth.login.rate_limited', metadata: { transport: 'cookie' } }),
         );
-        response.status(429).json({
-          error: { code: 'RATE_LIMITED', message: 'Too many login attempts.' },
-        });
+        response.status(429).json({ error: { code: 'RATE_LIMITED', message: 'Too many login attempts.' } });
         return;
       }
 
@@ -148,24 +132,16 @@ export function createApp(dependencies: AppDependencies) {
       if (!authenticated) {
         await recordAudit(
           dependencies.auditSink,
-          createAuditEvent({
-            action: 'auth.login.failed',
-            metadata: { transport: 'cookie' },
-          }),
+          createAuditEvent({ action: 'auth.login.failed', metadata: { transport: 'cookie' } }),
         );
-        response.status(401).json({
-          error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' },
-        });
+        response.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Invalid email or password.' } });
         return;
       }
 
       response.cookie(
         SESSION_COOKIE_NAME,
         authenticated.token,
-        sessionCookieOptions({
-          secure: dependencies.secureCookies,
-          maxAgeMs: dependencies.sessionTtlMs,
-        }),
+        sessionCookieOptions({ secure: dependencies.secureCookies, maxAgeMs: dependencies.sessionTtlMs }),
       );
       await recordAudit(
         dependencies.auditSink,
@@ -177,30 +153,27 @@ export function createApp(dependencies: AppDependencies) {
           metadata: { transport: 'cookie' },
         }),
       );
-      response.status(200).json({
-        data: { userId: authenticated.session.userId },
-        meta: {},
-      });
+      response.status(200).json({ data: { userId: authenticated.session.userId }, meta: {} });
     } catch (error) {
       next(error);
     }
   });
+
+  if (dependencies.accountLifecycle) {
+    mountPublicAccountRoutes(app, dependencies.accountLifecycle);
+  }
 
   app.use('/api/v1', async (request, response, next) => {
     const session = sessionToken(request);
     const requestedTenantId = tenantId(request);
 
     if (!session || !requestedTenantId) {
-      response.status(401).json({
-        error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' },
-      });
+      response.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } });
       return;
     }
 
     if (session.source === 'cookie' && !sameOrigin(request)) {
-      response.status(403).json({
-        error: { code: 'CSRF_FAILED', message: 'Request origin could not be verified.' },
-      });
+      response.status(403).json({ error: { code: 'CSRF_FAILED', message: 'Request origin could not be verified.' } });
       return;
     }
 
@@ -213,9 +186,7 @@ export function createApp(dependencies: AppDependencies) {
       });
 
       if (!principal) {
-        response.status(401).json({
-          error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' },
-        });
+        response.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } });
         return;
       }
 
@@ -234,10 +205,7 @@ export function createApp(dependencies: AppDependencies) {
       const session = await dependencies.sessionStore.findByTokenHash(hashSessionToken(rawToken));
 
       if (session && session.userId === principal.userId) {
-        await dependencies.sessionRevoker.revoke({
-          sessionId: session.id,
-          userId: principal.userId,
-        });
+        await dependencies.sessionRevoker.revoke({ sessionId: session.id, userId: principal.userId });
         await recordAudit(
           dependencies.auditSink,
           createAuditEvent({
@@ -262,6 +230,10 @@ export function createApp(dependencies: AppDependencies) {
     }
   });
 
+  if (dependencies.accountLifecycle) {
+    mountProtectedSessionRoutes(app, dependencies.accountLifecycle);
+  }
+
   app.get('/api/v1/me', (_request, response) => {
     const principal = response.locals.principal as AuthenticatedPrincipal;
     response.status(200).json({
@@ -277,37 +249,27 @@ export function createApp(dependencies: AppDependencies) {
 
   app.get('/api/v1/admin/ping', (_request, response) => {
     const principal = response.locals.principal as AuthenticatedPrincipal;
-
     try {
       requirePermission(principal, 'admin:access');
       response.status(200).json({ data: { ok: true }, meta: {} });
     } catch {
-      response.status(403).json({
-        error: { code: 'PERMISSION_DENIED', message: 'You do not have permission.' },
-      });
+      response.status(403).json({ error: { code: 'PERMISSION_DENIED', message: 'You do not have permission.' } });
     }
   });
 
   app.post('/api/v1/profile/ping', (_request, response) => {
     const principal = response.locals.principal as AuthenticatedPrincipal;
-
     try {
       requirePermission(principal, 'profile:read');
       response.status(200).json({ data: { ok: true }, meta: {} });
     } catch {
-      response.status(403).json({
-        error: { code: 'PERMISSION_DENIED', message: 'You do not have permission.' },
-      });
+      response.status(403).json({ error: { code: 'PERMISSION_DENIED', message: 'You do not have permission.' } });
     }
   });
 
-  app.use(
-    (_error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-      response.status(500).json({
-        error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' },
-      });
-    },
-  );
+  app.use((_error: unknown, _request: Request, response: Response, _next: NextFunction) => {
+    response.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' } });
+  });
 
   return app;
 }
