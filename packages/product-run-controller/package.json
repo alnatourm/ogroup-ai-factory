@@ -1,0 +1,12 @@
+{
+  "name": "@ogroup/product-run-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@ogroup/orchestrator": "0.1.0",
+    "@ogroup/github-task-emitter": "0.1.0",
+    "@ogroup/github-execution-adapter": "0.1.0"
+  }
+}
