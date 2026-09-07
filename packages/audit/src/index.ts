@@ -1,6 +1,6 @@
 export interface AuditEvent {
   action: string;
-  actorId: string;
+  actorId?: string;
   tenantId?: string;
   resourceType?: string;
   resourceId?: string;
@@ -14,14 +14,16 @@ export interface AuditSink {
 
 export function createAuditEvent(input: {
   action: string;
-  actorId: string;
+  actorId?: string;
   tenantId?: string;
   resourceType?: string;
   resourceId?: string;
   metadata?: Record<string, unknown>;
+  occurredAt?: string;
 }): AuditEvent {
+  const { occurredAt, ...rest } = input;
   return {
-    ...input,
-    occurredAt: new Date().toISOString(),
+    ...rest,
+    occurredAt: occurredAt ?? new Date().toISOString(),
   };
 }
