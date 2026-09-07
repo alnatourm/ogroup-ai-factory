@@ -1,13 +1,11 @@
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { describe, expect, it } from 'vitest';
 
-const here = dirname(fileURLToPath(import.meta.url));
 const migrationPath = resolve(
-  here,
-  '../../packages/database/migrations/0001_core_identity.sql',
+  process.cwd(),
+  'packages/database/migrations/0001_core_identity.sql',
 );
 
 async function createDatabase(): Promise<PGlite> {
