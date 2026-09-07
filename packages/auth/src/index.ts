@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { Algorithm, Version, hash, verify } from '@node-rs/argon2';
 
 export interface AuthenticatedPrincipal {
   userId: string;
@@ -17,6 +18,23 @@ export interface SessionRecord {
 
 export interface SessionStore {
   findByTokenHash(tokenHash: string): Promise<SessionRecord | null>;
+}
+
+export interface SessionIssuer {
+  create(input: {
+    userId: string;
+    expiresAt: Date;
+  }): Promise<{ token: string; session: SessionRecord }>;
+}
+
+export interface CredentialRecord {
+  userId: string;
+  email: string;
+  passwordHash: string;
+}
+
+export interface CredentialStore {
+  findByEmail(email: string): Promise<CredentialRecord | null>;
 }
 
 export interface MembershipResolver {
@@ -39,6 +57,61 @@ export function sessionTokenMatches(token: string, tokenHash: string): boolean {
   const expected = Buffer.from(tokenHash, 'utf8');
 
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  if (password.length < 12 || password.length > 1024) {
+    throw new Error('PASSWORD_POLICY_FAILED');
+  }
+
+  return hash(password, {
+    algorithm: Algorithm.Argon2id,
+    version: Version.V0x13,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 1,
+    outputLen: 32,
+  });
+}
+
+export async function verifyPassword(
+  passwordHash: string,
+  password: string,
+): Promise<boolean> {
+  if (!password || password.length > 1024) {
+    return false;
+  }
+
+  try {
+    return await verify(passwordHash, password);
+  } catch {
+    return false;
+  }
+}
+
+export async function authenticateCredentials(input: {
+  email: string;
+  password: string;
+  credentialStore: CredentialStore;
+  sessionIssuer: SessionIssuer;
+  sessionTtlMs: number;
+  now?: Date;
+}): Promise<{ token: string; session: SessionRecord } | null> {
+  const email = input.email.trim().toLowerCase();
+  if (!email || !input.password || input.password.length > 1024 || input.sessionTtlMs <= 0) {
+    return null;
+  }
+
+  const credential = await input.credentialStore.findByEmail(email);
+  if (!credential || !(await verifyPassword(credential.passwordHash, input.password))) {
+    return null;
+  }
+
+  const now = input.now ?? new Date();
+  return input.sessionIssuer.create({
+    userId: credential.userId,
+    expiresAt: new Date(now.getTime() + input.sessionTtlMs),
+  });
 }
 
 export async function authenticateSession(input: {
