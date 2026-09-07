@@ -11,6 +11,10 @@ export interface AccountDirectory {
   setPasswordHash(userId: string, passwordHash: string): Promise<boolean>;
 }
 
+export interface PasswordResetSessionRevoker {
+  revokeAllForUser(userId: string): Promise<number>;
+}
+
 export interface MembershipWriter {
   ensureMembership(input: { tenantId: string; userId: string }): Promise<{ membershipId: string }>;
 }
@@ -42,12 +46,7 @@ export async function verifyEmail(input: {
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
-  const record = await consumeAccountToken({
-    token: input.token,
-    purpose: 'email_verification',
-    store: input.tokenStore,
-    now,
-  });
+  const record = await consumeAccountToken({ token: input.token, purpose: 'email_verification', store: input.tokenStore, now });
   if (!record?.userId) return false;
   return input.accounts.markEmailVerified(record.userId, now);
 }
@@ -76,18 +75,21 @@ export async function resetPassword(input: {
   newPassword: string;
   tokenStore: AccountTokenStore;
   accounts: AccountDirectory;
+  sessions?: PasswordResetSessionRevoker;
   now?: Date;
 }): Promise<boolean> {
   const now = input.now ?? new Date();
-  const record = await consumeAccountToken({
-    token: input.token,
-    purpose: 'password_reset',
-    store: input.tokenStore,
-    now,
-  });
+  const record = await consumeAccountToken({ token: input.token, purpose: 'password_reset', store: input.tokenStore, now });
   if (!record?.userId) return false;
+
   const passwordHash = await hashPassword(input.newPassword);
-  return input.accounts.setPasswordHash(record.userId, passwordHash);
+  const changed = await input.accounts.setPasswordHash(record.userId, passwordHash);
+  if (!changed) return false;
+
+  if (input.sessions) {
+    await input.sessions.revokeAllForUser(record.userId);
+  }
+  return true;
 }
 
 export async function issueInvitation(input: {
@@ -114,17 +116,9 @@ export async function acceptInvitation(input: {
   now?: Date;
 }): Promise<{ userId: string; membershipId: string; tenantId: string } | null> {
   const now = input.now ?? new Date();
-  const record = await consumeAccountToken({
-    token: input.token,
-    purpose: 'invitation',
-    store: input.tokenStore,
-    now,
-  });
+  const record = await consumeAccountToken({ token: input.token, purpose: 'invitation', store: input.tokenStore, now });
   if (!record?.tenantId || !record.email) return null;
   const user = await input.users.findOrCreateByEmail(record.email);
-  const membership = await input.memberships.ensureMembership({
-    tenantId: record.tenantId,
-    userId: user.userId,
-  });
+  const membership = await input.memberships.ensureMembership({ tenantId: record.tenantId, userId: user.userId });
   return { userId: user.userId, membershipId: membership.membershipId, tenantId: record.tenantId };
 }
