@@ -1,0 +1,10 @@
+{
+  "name": "@ogroup/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@ogroup/product-generator": "0.1.0"
+  }
+}
