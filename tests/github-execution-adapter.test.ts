@@ -11,7 +11,7 @@ const tasks = emitGitHubTasks(orchestrateProduct({
 function fakePort(failAt?: number): GitHubIssuePort {
   let count = 0;
   return {
-    async createIssue(input) {
+    async createIssue(_input) {
       count += 1;
       if (failAt === count) throw new Error('SIMULATED_GITHUB_FAILURE');
       return { number: 100 + count, url: `https://example.test/issues/${100 + count}` };
