@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  foreignKey,
   pgTable,
   text,
   timestamp,
@@ -56,6 +57,7 @@ export const memberships = pgTable('memberships', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex('memberships_tenant_user_unique').on(table.tenantId, table.userId),
+  uniqueIndex('memberships_id_tenant_unique').on(table.id, table.tenantId),
 ]);
 
 export const roles = pgTable('roles', {
@@ -63,7 +65,10 @@ export const roles = pgTable('roles', {
   tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [uniqueIndex('roles_tenant_name_unique').on(table.tenantId, table.name)]);
+}, (table) => [
+  uniqueIndex('roles_tenant_name_unique').on(table.tenantId, table.name),
+  uniqueIndex('roles_id_tenant_unique').on(table.id, table.tenantId),
+]);
 
 export const permissions = pgTable('permissions', {
   id: uuid('id').primaryKey(),
@@ -78,9 +83,22 @@ export const rolePermissions = pgTable('role_permissions', {
 ]);
 
 export const userRoles = pgTable('user_roles', {
-  membershipId: uuid('membership_id').notNull().references(() => memberships.id, { onDelete: 'cascade' }),
-  roleId: uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
-}, (table) => [uniqueIndex('user_roles_unique').on(table.membershipId, table.roleId)]);
+  membershipId: uuid('membership_id').notNull(),
+  roleId: uuid('role_id').notNull(),
+  tenantId: uuid('tenant_id').notNull(),
+}, (table) => [
+  uniqueIndex('user_roles_unique').on(table.membershipId, table.roleId),
+  foreignKey({
+    columns: [table.membershipId, table.tenantId],
+    foreignColumns: [memberships.id, memberships.tenantId],
+    name: 'user_roles_membership_tenant_fk',
+  }).onDelete('cascade'),
+  foreignKey({
+    columns: [table.roleId, table.tenantId],
+    foreignColumns: [roles.id, roles.tenantId],
+    name: 'user_roles_role_tenant_fk',
+  }).onDelete('cascade'),
+]);
 
 export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').primaryKey(),
