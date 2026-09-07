@@ -6,24 +6,30 @@ import {
   type MembershipResolver,
   type SessionStore,
 } from '@ogroup/auth';
+import {
+  isSameOriginMutation,
+  parseCookie,
+  SESSION_COOKIE_NAME,
+} from '@ogroup/web-security';
 
 export interface AppDependencies {
   sessionStore: SessionStore;
   membershipResolver: MembershipResolver;
 }
 
-function bearerToken(request: Request): string | null {
+type SessionTokenSource = 'bearer' | 'cookie';
+
+function sessionToken(request: Request): { token: string; source: SessionTokenSource } | null {
   const header = request.header('authorization');
-  if (!header) {
-    return null;
+  if (header) {
+    const [scheme, token] = header.split(' ');
+    if (scheme?.toLowerCase() === 'bearer' && token) {
+      return { token, source: 'bearer' };
+    }
   }
 
-  const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) {
-    return null;
-  }
-
-  return token;
+  const cookieToken = parseCookie(request.header('cookie'), SESSION_COOKIE_NAME);
+  return cookieToken ? { token: cookieToken, source: 'cookie' } : null;
 }
 
 function tenantId(request: Request): string | null {
@@ -43,19 +49,35 @@ export function createApp(dependencies: AppDependencies) {
   });
 
   app.use('/api/v1', async (request, response, next) => {
-    const token = bearerToken(request);
+    const session = sessionToken(request);
     const requestedTenantId = tenantId(request);
 
-    if (!token || !requestedTenantId) {
+    if (!session || !requestedTenantId) {
       response.status(401).json({
         error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' },
       });
       return;
     }
 
+    if (
+      session.source === 'cookie' &&
+      !isSameOriginMutation({
+        method: request.method,
+        host: request.header('host'),
+        origin: request.header('origin'),
+        referer: request.header('referer'),
+        protocol: request.secure ? 'https' : 'http',
+      })
+    ) {
+      response.status(403).json({
+        error: { code: 'CSRF_FAILED', message: 'Request origin could not be verified.' },
+      });
+      return;
+    }
+
     try {
       const principal = await authenticateSession({
-        token,
+        token: session.token,
         tenantId: requestedTenantId,
         sessionStore: dependencies.sessionStore,
         membershipResolver: dependencies.membershipResolver,
@@ -101,9 +123,21 @@ export function createApp(dependencies: AppDependencies) {
     }
   });
 
+  app.post('/api/v1/profile/ping', (_request, response) => {
+    const principal = response.locals.principal as AuthenticatedPrincipal;
+
+    try {
+      requirePermission(principal, 'profile:read');
+      response.status(200).json({ data: { ok: true }, meta: {} });
+    } catch {
+      response.status(403).json({
+        error: { code: 'PERMISSION_DENIED', message: 'You do not have permission.' },
+      });
+    }
+  });
+
   app.use(
-    (error: unknown, _request: Request, response: Response, _next: NextFunction) => {
-      console.error(error);
+    (_error: unknown, _request: Request, response: Response, _next: NextFunction) => {
       response.status(500).json({
         error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' },
       });
