@@ -214,3 +214,5 @@ export class SqlMembershipResolver implements MembershipResolver {
     };
   }
 }
+
+export { SqlAccountTokenRepository } from './account-lifecycle.js';
