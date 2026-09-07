@@ -1,0 +1,11 @@
+{
+  "productName": "CVideo",
+  "slug": "cvideo",
+  "market": "MENA",
+  "industry": "Recruitment / HR Tech",
+  "platforms": ["web", "api"],
+  "languages": ["ar", "en"],
+  "defaultLanguage": "ar",
+  "description": "Video-first candidate discovery platform where candidates present through a 30-second video and recruiters search, filter, shortlist and initiate chat. Candidates do not apply to jobs.",
+  "pilotVersion": "0.1"
+}
