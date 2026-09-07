@@ -39,3 +39,23 @@ export function assertTenantOwnership(
     throw new TenantContextError('Cross-tenant access denied.');
   }
 }
+
+export interface TenantOwnedRecord {
+  tenantId: string;
+}
+
+export function scopeTenantRecord<T extends TenantOwnedRecord>(
+  context: TenantContext,
+  record: T | null,
+): T | null {
+  if (!record) {
+    return null;
+  }
+
+  assertTenantOwnership(context, record.tenantId);
+  return record;
+}
+
+export function tenantWhere(context: TenantContext): Readonly<{ tenantId: string }> {
+  return Object.freeze({ tenantId: context.tenantId });
+}
