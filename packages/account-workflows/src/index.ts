@@ -78,11 +78,12 @@ export async function resetPassword(input: {
   accounts: AccountDirectory;
   now?: Date;
 }): Promise<boolean> {
+  const now = input.now ?? new Date();
   const record = await consumeAccountToken({
     token: input.token,
     purpose: 'password_reset',
     store: input.tokenStore,
-    now: input.now,
+    now,
   });
   if (!record?.userId) return false;
   const passwordHash = await hashPassword(input.newPassword);
@@ -112,14 +113,18 @@ export async function acceptInvitation(input: {
   memberships: MembershipWriter;
   now?: Date;
 }): Promise<{ userId: string; membershipId: string; tenantId: string } | null> {
+  const now = input.now ?? new Date();
   const record = await consumeAccountToken({
     token: input.token,
     purpose: 'invitation',
     store: input.tokenStore,
-    now: input.now,
+    now,
   });
   if (!record?.tenantId || !record.email) return null;
   const user = await input.users.findOrCreateByEmail(record.email);
-  const membership = await input.memberships.ensureMembership({ tenantId: record.tenantId, userId: user.userId });
+  const membership = await input.memberships.ensureMembership({
+    tenantId: record.tenantId,
+    userId: user.userId,
+  });
   return { userId: user.userId, membershipId: membership.membershipId, tenantId: record.tenantId };
 }
