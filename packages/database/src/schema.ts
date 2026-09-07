@@ -21,6 +21,16 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('users_email_unique').on(table.email)]);
 
+export const sessions = pgTable('sessions', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash)]);
+
 export const memberships = pgTable('memberships', {
   id: uuid('id').primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
