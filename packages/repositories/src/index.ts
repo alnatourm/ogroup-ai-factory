@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import type { AuditEvent, AuditSink } from '@ogroup/audit';
 import {
   createSessionToken,
   hashSessionToken,
   type CredentialRecord,
   type CredentialStore,
   type MembershipResolver,
+  type SessionIssuer,
   type SessionRecord,
+  type SessionRevoker,
   type SessionStore,
 } from '@ogroup/auth';
 
@@ -29,7 +32,7 @@ interface SessionRow {
   revoked_at: string | Date | null;
 }
 
-export class SqlSessionRepository implements SessionStore {
+export class SqlSessionRepository implements SessionStore, SessionIssuer, SessionRevoker {
   constructor(private readonly db: SqlClient) {}
 
   async findByTokenHash(tokenHash: string): Promise<SessionRecord | null> {
@@ -141,6 +144,28 @@ export class SqlCredentialRepository implements CredentialStore {
     );
 
     return result.rows.length === 1;
+  }
+}
+
+export class SqlAuditSink implements AuditSink {
+  constructor(private readonly db: SqlClient) {}
+
+  async write(event: AuditEvent): Promise<void> {
+    await this.db.query(
+      `INSERT INTO audit_logs (
+         id, tenant_id, actor_id, action, resource_type, resource_id, metadata_json, occurred_at
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        randomUUID(),
+        event.tenantId ?? null,
+        event.actorId ?? null,
+        event.action,
+        event.resourceType ?? null,
+        event.resourceId ?? null,
+        event.metadata ? JSON.stringify(event.metadata) : null,
+        event.occurredAt,
+      ],
+    );
   }
 }
 
