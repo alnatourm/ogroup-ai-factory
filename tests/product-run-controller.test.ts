@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { runProductFactory } from '../packages/product-run-controller/src/index.js';
+import { runProductFactory, type ProductRunInput } from '../packages/product-run-controller/src/index.js';
 import type { GitHubIssuePort } from '../packages/github-execution-adapter/src/index.js';
 
-const baseInput = {
-  productName: 'CVideo', market: 'MENA', industry: 'Recruitment', platforms: ['web', 'api'] as const,
-  languages: ['ar', 'en'] as const, defaultLanguage: 'ar' as const, description: 'Video-first recruiting SaaS.',
+const baseInput: ProductRunInput = {
+  productName: 'CVideo', market: 'MENA', industry: 'Recruitment', platforms: ['web', 'api'],
+  languages: ['ar', 'en'], defaultLanguage: 'ar', description: 'Video-first recruiting SaaS.',
   repositoryFullName: 'o/cvideo', approved: false,
 };
 
