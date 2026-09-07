@@ -6,7 +6,9 @@
   "main": "./src/app.ts",
   "types": "./src/app.ts",
   "dependencies": {
+    "@ogroup/audit": "0.1.0",
     "@ogroup/auth": "0.1.0",
+    "@ogroup/rate-limit": "0.1.0",
     "@ogroup/web-security": "0.1.0",
     "express": "^5.1.0"
   }
