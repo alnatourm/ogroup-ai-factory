@@ -37,6 +37,18 @@ export const sessions = pgTable('sessions', {
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 }, (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash)]);
 
+export const accountTokens = pgTable('account_tokens', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').references(() => organizations.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  email: text('email'),
+  purpose: text('purpose').notNull(),
+  tokenHash: text('token_hash').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('account_tokens_token_hash_unique').on(table.tokenHash)]);
+
 export const memberships = pgTable('memberships', {
   id: uuid('id').primaryKey(),
   tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
