@@ -29,6 +29,7 @@ export interface SessionDeviceRecord {
 export interface SessionDeviceManager {
   listForUser(userId: string): Promise<SessionDeviceRecord[]>;
   revokeForUser(input: { userId: string; sessionId: string }): Promise<boolean>;
+  revokeAllForUser(userId: string): Promise<number>;
 }
 
 export interface AccountHttpDependencies {
@@ -134,8 +135,9 @@ export function mountPublicAccountRoutes(app: Express, dependencies: AccountHttp
         newPassword: input.password,
         tokenStore: dependencies.tokenStore,
         accounts: dependencies.accounts,
+        ...(dependencies.sessions ? { sessions: dependencies.sessions } : {}),
       });
-      await audit(dependencies.auditSink, changed ? 'auth.password_reset.succeeded' : 'auth.password_reset.rejected');
+      await audit(dependencies.auditSink, changed ? 'auth.password_reset.succeeded_sessions_revoked' : 'auth.password_reset.rejected');
       response.status(changed ? 200 : 400).json(
         changed
           ? { data: { changed: true }, meta: {} }
@@ -232,9 +234,7 @@ export function mountProtectedSessionRoutes(app: Express, dependencies: AccountH
         return;
       }
       const revoked = await dependencies.sessions!.revokeForUser({ userId: principal.userId, sessionId });
-      await audit(dependencies.auditSink, revoked ? 'auth.session.revoked' : 'auth.session.revoke_rejected', {
-        sessionId,
-      });
+      await audit(dependencies.auditSink, revoked ? 'auth.session.revoked' : 'auth.session.revoke_rejected', { sessionId });
       response.status(revoked ? 204 : 404).send();
     } catch (error) {
       next(error);

@@ -32,4 +32,21 @@ describe('SQL session device repository', () => {
     expect((await repository.findByTokenHash(b.session.tokenHash))?.revokedAt).toBeNull();
     await db.close();
   });
+
+  it('revokes every active session for one user and leaves other users untouched', async () => {
+    const db = await database();
+    const userA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const userB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await db.query('INSERT INTO users (id, email) VALUES ($1, $2), ($3, $4)', [userA, 'reset@example.com', userB, 'other@example.com']);
+    const repository = new SqlSessionRepository(db);
+    const a1 = await repository.create({ userId: userA, expiresAt: new Date(Date.now() + 60_000) });
+    const a2 = await repository.create({ userId: userA, expiresAt: new Date(Date.now() + 60_000) });
+    const b1 = await repository.create({ userId: userB, expiresAt: new Date(Date.now() + 60_000) });
+
+    expect(await repository.revokeAllForUser(userA)).toBe(2);
+    expect((await repository.findByTokenHash(a1.session.tokenHash))?.revokedAt).not.toBeNull();
+    expect((await repository.findByTokenHash(a2.session.tokenHash))?.revokedAt).not.toBeNull();
+    expect((await repository.findByTokenHash(b1.session.tokenHash))?.revokedAt).toBeNull();
+    await db.close();
+  });
 });
