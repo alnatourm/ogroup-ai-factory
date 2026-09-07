@@ -70,19 +70,40 @@ describe('account workflows', () => {
     expect(unknown).toBeNull();
   });
 
-  it('consumes password reset tokens only once', async () => {
+  it('consumes password reset tokens once and revokes only the token subject sessions', async () => {
     const tokens = new MemoryTokens();
     const issued = await tokens.create({ userId: 'u1', email: 'user@example.com', purpose: 'password_reset', expiresAt: new Date(Date.now() + 60_000) });
     let updates = 0;
+    const revokedUsers: string[] = [];
     const accounts = {
       findUserByEmail: async () => null,
       markEmailVerified: async () => true,
       setPasswordHash: async () => { updates += 1; return true; },
     };
+    const sessions = {
+      async revokeAllForUser(userId: string) { revokedUsers.push(userId); return 2; },
+    };
 
-    expect(await resetPassword({ token: issued.token, newPassword: 'very-secure-password', tokenStore: tokens, accounts })).toBe(true);
-    expect(await resetPassword({ token: issued.token, newPassword: 'another-secure-password', tokenStore: tokens, accounts })).toBe(false);
+    expect(await resetPassword({ token: issued.token, newPassword: 'very-secure-password', tokenStore: tokens, accounts, sessions })).toBe(true);
+    expect(await resetPassword({ token: issued.token, newPassword: 'another-secure-password', tokenStore: tokens, accounts, sessions })).toBe(false);
     expect(updates).toBe(1);
+    expect(revokedUsers).toEqual(['u1']);
+    expect(revokedUsers).not.toContain('u2');
+  });
+
+  it('does not revoke sessions when password persistence fails', async () => {
+    const tokens = new MemoryTokens();
+    const issued = await tokens.create({ userId: 'u1', purpose: 'password_reset', expiresAt: new Date(Date.now() + 60_000) });
+    let revocations = 0;
+    const accounts = {
+      findUserByEmail: async () => null,
+      markEmailVerified: async () => true,
+      setPasswordHash: async () => false,
+    };
+    const sessions = { async revokeAllForUser() { revocations += 1; return 0; } };
+
+    expect(await resetPassword({ token: issued.token, newPassword: 'very-secure-password', tokenStore: tokens, accounts, sessions })).toBe(false);
+    expect(revocations).toBe(0);
   });
 
   it('verifies email and prevents token replay', async () => {
