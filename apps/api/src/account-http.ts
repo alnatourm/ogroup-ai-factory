@@ -135,7 +135,7 @@ export function mountPublicAccountRoutes(app: Express, dependencies: AccountHttp
         newPassword: input.password,
         tokenStore: dependencies.tokenStore,
         accounts: dependencies.accounts,
-        sessions: dependencies.sessions,
+        ...(dependencies.sessions ? { sessions: dependencies.sessions } : {}),
       });
       await audit(dependencies.auditSink, changed ? 'auth.password_reset.succeeded_sessions_revoked' : 'auth.password_reset.rejected');
       response.status(changed ? 200 : 400).json(
