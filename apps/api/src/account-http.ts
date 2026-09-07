@@ -70,7 +70,7 @@ function resetInput(body: unknown): { token: string; password: string } | null {
 
 async function audit(sink: AuditSink, action: string, metadata?: Record<string, unknown>): Promise<void> {
   try {
-    await sink.write(createAuditEvent({ action, metadata }));
+    await sink.write(metadata ? createAuditEvent({ action, metadata }) : createAuditEvent({ action }));
   } catch {
     // Account recovery availability must not depend on the audit sink.
   }
@@ -225,7 +225,8 @@ export function mountProtectedSessionRoutes(app: Express, dependencies: AccountH
   app.delete('/api/v1/auth/sessions/:sessionId', async (request: Request, response: Response, next) => {
     try {
       const principal = response.locals.principal as AuthenticatedPrincipal;
-      const sessionId = request.params.sessionId;
+      const rawSessionId = request.params.sessionId;
+      const sessionId = Array.isArray(rawSessionId) ? rawSessionId[0] : rawSessionId;
       if (!sessionId) {
         response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Session id is required.' } });
         return;
