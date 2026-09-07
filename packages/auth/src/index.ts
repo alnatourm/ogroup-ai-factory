@@ -27,6 +27,10 @@ export interface SessionIssuer {
   }): Promise<{ token: string; session: SessionRecord }>;
 }
 
+export interface SessionRevoker {
+  revoke(input: { sessionId: string; userId: string }): Promise<boolean>;
+}
+
 export interface CredentialRecord {
   userId: string;
   email: string;
