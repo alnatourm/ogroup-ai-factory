@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import {
   createSessionToken,
   hashSessionToken,
+  type CredentialRecord,
+  type CredentialStore,
   type MembershipResolver,
   type SessionRecord,
   type SessionStore,
@@ -92,6 +94,50 @@ export class SqlSessionRepository implements SessionStore {
        WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
        RETURNING id`,
       [input.sessionId, input.userId],
+    );
+
+    return result.rows.length === 1;
+  }
+}
+
+interface CredentialRow {
+  id: string;
+  email: string;
+  password_hash: string;
+}
+
+export class SqlCredentialRepository implements CredentialStore {
+  constructor(private readonly db: SqlClient) {}
+
+  async findByEmail(email: string): Promise<CredentialRecord | null> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const result = await this.db.query<CredentialRow>(
+      `SELECT id, email, password_hash
+       FROM users
+       WHERE lower(email) = $1 AND password_hash IS NOT NULL
+       LIMIT 1`,
+      [normalizedEmail],
+    );
+
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    return {
+      userId: row.id,
+      email: row.email,
+      passwordHash: row.password_hash,
+    };
+  }
+
+  async setPasswordHash(input: { userId: string; passwordHash: string }): Promise<boolean> {
+    const result = await this.db.query<{ id: string }>(
+      `UPDATE users
+       SET password_hash = $2, updated_at = now()
+       WHERE id = $1
+       RETURNING id`,
+      [input.userId, input.passwordHash],
     );
 
     return result.rows.length === 1;
