@@ -24,6 +24,7 @@ async function setup(): Promise<{ db: PGlite; client: PGliteClient }> {
   for (const path of [
     'packages/database/migrations/0001_core_identity.sql',
     'packages/database/migrations/0002_sessions.sql',
+    'packages/database/migrations/0005_rbac_tenant_integrity.sql',
   ]) {
     await db.exec(await readFile(resolve(process.cwd(), path), 'utf8'));
   }
@@ -60,9 +61,10 @@ describe('PostgreSQL-backed authentication repositories', () => {
       roleId,
       permissionId,
     ]);
-    await db.query('INSERT INTO user_roles (membership_id, role_id) VALUES ($1, $2)', [
+    await db.query('INSERT INTO user_roles (membership_id, role_id, tenant_id) VALUES ($1, $2, $3)', [
       membershipId,
       roleId,
+      tenantId,
     ]);
 
     const sessionRepository = new SqlSessionRepository(client);
