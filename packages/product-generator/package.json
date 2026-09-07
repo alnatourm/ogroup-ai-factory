@@ -1,0 +1,12 @@
+{
+  "name": "@ogroup/product-generator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@ogroup/product-template": "0.1.0"
+  }
+}
