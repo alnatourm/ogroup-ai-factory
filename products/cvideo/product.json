@@ -1,11 +1,15 @@
 {
-  "productName": "CVideo",
+  "productName": "CVIDEO",
   "slug": "cvideo",
-  "market": "MENA",
+  "market": "MENA-first / global-ready",
   "industry": "Recruitment / HR Tech",
-  "platforms": ["web", "api"],
+  "platforms": ["web", "mobile", "api", "admin"],
   "languages": ["ar", "en"],
   "defaultLanguage": "ar",
-  "description": "Video-first candidate discovery platform where candidates present through a 30-second video and recruiters search, filter, shortlist and initiate chat. Candidates do not apply to jobs.",
-  "pilotVersion": "0.1"
+  "productModel": "reverse-employment talent discovery",
+  "description": "Video-first reverse-employment platform where candidates create reusable professional profiles with a short introduction video and companies search the talent pool, watch videos, save candidates, initiate chat, and request interviews. Candidates do not browse vacancies or apply to jobs.",
+  "primaryCandidateVideoSeconds": 30,
+  "sourceOfTruth": "products/cvideo/docs/PRODUCT.md",
+  "status": "product-discovery",
+  "pilotVersion": "1.0"
 }
