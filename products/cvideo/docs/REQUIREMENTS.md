@@ -1,4 +1,4 @@
-# CVideo Requirements v0.1
+# CVideo Requirements v0.2
 
 ## Candidate requirements
 - Candidate profile MUST treat a 30-second video as the primary presentation asset.
@@ -9,6 +9,18 @@
 - Candidate navigation MUST be Home, Messages and Profile.
 - Candidate MAY view video watch count.
 - Candidate MUST NOT initiate a new recruiter/company conversation.
+
+## Fast profile requirements
+- Profile completion MUST be simple, fast and suitable for mobile use.
+- Years of experience MUST be captured as one whole-number field from 0 to 50.
+- Certificates MUST be captured as one whole-number count from 0 to 50.
+- Highest education MUST be captured using one bilingual dropdown.
+- The approved education values are: No formal education, High school, Vocational/technical, Diploma, Bachelor's, Master's, Doctorate (PhD), and Professor/academic rank.
+- The quick profile MUST NOT require company names, job history dates, institution names, certificate names, issuing organizations or certificate dates.
+- Existing detailed experience, education and certificate records MUST be preserved during migration, but the v1 quick-profile interface MUST not require or expose those long forms.
+- Recruiter summaries MUST show years of experience, highest education and certificate count as concise values.
+- Arabic and English labels MUST represent the same canonical stored values.
+- Profile save MUST update the three simplified fields in the same save action as the rest of the profile.
 
 ## Recruiter/company requirements
 - Recruiter MUST belong to an authorized company context for company-owned operations.
