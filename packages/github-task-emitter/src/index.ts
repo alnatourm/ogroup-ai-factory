@@ -11,7 +11,7 @@ export interface GitHubTaskDefinition {
 }
 
 const agentRoles: Record<OrchestratorStageName, string> = {
-  product: 'Product Agent', architecture: 'Architect Agent', database: 'Database Agent', backend: 'Backend Agent',
+  product: 'Product Agent', architecture: 'Architect Agent', design: 'Design Agent', database: 'Database Agent', backend: 'Backend Agent',
   frontend: 'Frontend Agent', qa: 'QA Agent', security: 'Security Agent', review: 'Review Agent', release: 'Human Release Owner',
 };
 
