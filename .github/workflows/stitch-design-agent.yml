@@ -7,6 +7,12 @@ on:
       - 'factory/design-requests/**'
       - 'factory/design-triggers/**'
       - '.github/workflows/stitch-design-agent.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'factory/design-requests/**'
+      - 'factory/design-triggers/**'
+      - '.github/workflows/stitch-design-agent.yml'
   workflow_dispatch:
     inputs:
       request_path:
@@ -160,7 +166,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Persist Factory status
-        if: always()
+        if: always() && github.event_name != 'pull_request'
         shell: bash
         run: |
           git config user.name "ogroup-ai-factory"
