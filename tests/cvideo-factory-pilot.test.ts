@@ -18,7 +18,7 @@ describe('CVideo factory pilot', () => {
     expect(plan.product.slug).toBe('cvideo');
     expect(plan.product.config.defaultLanguage).toBe('ar');
     expect(plan.stages.map((stage) => stage.id)).toEqual([
-      'product', 'architecture', 'database', 'backend', 'frontend', 'qa', 'security', 'review', 'release',
+      'product', 'architecture', 'design', 'database', 'backend', 'frontend', 'qa', 'security', 'review', 'release',
     ]);
     expect(plan.humanGates).toContain('Authentication, authorization and tenant isolation');
     expect(plan.humanGates).toContain('Production release');
@@ -26,7 +26,7 @@ describe('CVideo factory pilot', () => {
 
   it('emits agent-ready tasks without granting merge authority', () => {
     const tasks = emitGitHubTasks(orchestrateProduct(cvideo), ['pilot:cvideo']);
-    expect(tasks).toHaveLength(9);
+    expect(tasks).toHaveLength(10);
     expect(tasks.every((task) => task.labels.includes('pilot:cvideo'))).toBe(true);
     expect(tasks.every((task) => task.body.includes('does not grant merge or production authority'))).toBe(true);
   });
