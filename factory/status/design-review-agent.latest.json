@@ -2,7 +2,7 @@
   "workflow": "Design Review Agent",
   "status": "DESIGN_REVISION_REQUIRED",
   "score": 99,
-  "projectId": "10331346960531835750",
+  "projectId": "8720719727127216498",
   "summary": {
     "expectedScreens": 8,
     "generatedScreens": 8,
@@ -14,10 +14,21 @@
   "blockingIssues": [
     "Potential exposed credential-like value detected in workspace-onboarding."
   ],
+  "secretEvidence": [
+    {
+      "key": "workspace-onboarding",
+      "evidence": [
+        {
+          "kind": "openai-like-key",
+          "context": "utline-none\" dir=\"ltr\" id=\"api-key\" placeholder=\"sk-...\" type=\"password\" value=\"[REDACTED openai-like-key]\"/> <button aria-label=\"عرض المفتاح\" class=\"absolute inset-y-0 left-3 flex items"
+        }
+      ]
+    }
+  ],
   "limitations": [
     "v0.1 reviews generated HTML structure/content and does not yet perform pixel-level visual judgment.",
     "A future visual reviewer should inspect rendered screenshots for spacing, hierarchy, clipping, contrast and cross-screen consistency."
   ],
-  "runId": "35331667699",
-  "commitSha": "eaf960589726007c28a1276badf718172961a406"
+  "runId": "35340937835",
+  "commitSha": "77d430a10bb055f02569c91305c2c10d4d611c7d"
 }
