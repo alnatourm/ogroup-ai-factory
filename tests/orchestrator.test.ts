@@ -18,7 +18,7 @@ describe('factory orchestrator', () => {
 
     expect(first).toEqual(second);
     expect(first.stages.map((stage) => stage.id)).toEqual([
-      'product', 'architecture', 'database', 'backend', 'frontend', 'qa', 'security', 'review', 'release',
+      'product', 'architecture', 'design', 'database', 'backend', 'frontend', 'qa', 'security', 'review', 'release',
     ]);
   });
 
@@ -27,8 +27,10 @@ describe('factory orchestrator', () => {
     const stage = Object.fromEntries(plan.stages.map((item) => [item.id, item]));
 
     expect(stage.architecture?.dependsOn).toEqual(['product']);
+    expect(stage.design?.dependsOn).toEqual(['architecture']);
     expect(stage.database?.dependsOn).toEqual(['architecture']);
     expect(stage.backend?.dependsOn).toEqual(['architecture', 'database']);
+    expect(stage.frontend?.dependsOn).toEqual(['architecture', 'design']);
     expect(stage.qa?.dependsOn).toEqual(['backend', 'frontend']);
     expect(stage.security?.dependsOn).toEqual(['backend', 'frontend', 'qa']);
     expect(stage.review?.dependsOn).toEqual(['qa', 'security']);
