@@ -1,0 +1,54 @@
+{
+  "productId": "arabic-ai-ipaas",
+  "projectTitle": "Arabic AI iPaaS",
+  "screens": [
+    {
+      "key": "workspace-onboarding",
+      "title": "Workspace Onboarding",
+      "deviceType": "DESKTOP",
+      "prompt": "Design an Arabic-first SaaS workspace onboarding screen for Arabic AI iPaaS. Primary direction RTL with excellent bilingual Arabic/English support. Clean enterprise interface, simple 3-step onboarding: workspace details, data region/policy, first AI provider. The product connects Arabic users and business systems to any AI model. Avoid decorative clutter. Make progress, privacy, and BYOAI clear."
+    },
+    {
+      "key": "provider-connections",
+      "title": "AI Provider Connections",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the AI Provider Connections screen for Arabic AI iPaaS, RTL-first enterprise SaaS. Cards for OpenAI-compatible, Gemini, Anthropic-compatible, Groq/OpenAI-compatible, and Custom HTTP. Show connection status, default model, last test, and secure credential setup without ever displaying stored secrets. Include Add Provider and Test Connection actions."
+    },
+    {
+      "key": "gateway-playground",
+      "title": "Arabic AI Gateway Playground",
+      "deviceType": "DESKTOP",
+      "prompt": "Design an Arabic AI Gateway Playground for developers. RTL-first but code and JSON remain LTR. Left/primary area contains Arabic prompt input and response. Side panel shows provider, model, Arabic mode, entity masking, glossary, route, latency, input/output tokens, and trace id. Make it feel like developer infrastructure, not a consumer chatbot."
+    },
+    {
+      "key": "workflow-builder",
+      "title": "Arabic Workflow Builder",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the flagship Arabic Workflow Builder. At the top, a large Arabic natural-language instruction box. After generation, show a visual workflow with Trigger, Conditions and Actions plus a structured Arabic summary. Include validation errors, required integrations, Review before Activate, and editable steps. RTL-first. Do not resemble a generic drag-and-drop toy."
+    },
+    {
+      "key": "workflow-runs",
+      "title": "Workflow Run History",
+      "deviceType": "DESKTOP",
+      "prompt": "Design Workflow Run History for Arabic AI iPaaS. Enterprise RTL dashboard with run status, workflow name, trigger, duration, retry count, timestamp, failed step and error reason. Selecting a run opens step-by-step execution evidence. Clear success/failure states and retry controls."
+    },
+    {
+      "key": "document-intelligence",
+      "title": "Arabic Document Intelligence",
+      "deviceType": "DESKTOP",
+      "prompt": "Design Arabic Document Intelligence workspace. Upload Arabic or bilingual PDF, show parsing progress and then a split view: original document/page preview and extracted structured Arabic content. Include page provenance, tables, confidence indicators, Markdown/JSON tabs, and Send to Workflow / Send to AI Gateway actions. RTL text must be first-class."
+    },
+    {
+      "key": "usage-dashboard",
+      "title": "Usage and Reliability Dashboard",
+      "deviceType": "DESKTOP",
+      "prompt": "Design an enterprise Usage and Reliability dashboard for Arabic AI iPaaS. RTL-first. Show gateway requests, workflow runs, document pages, provider usage, token counts, estimated upstream cost, latency, error rate and gateway success rate. Include filters by workspace, provider, model and date. Prioritize operational clarity over flashy charts."
+    },
+    {
+      "key": "data-policy",
+      "title": "Data Policy and Privacy",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the Data Policy screen for Arabic AI iPaaS. Make three distinct policy choices understandable: Private Only, Anonymous Telemetry, Explicit Improvement-Data Opt-In. Explain what each stores and what never enters training by default. Show current policy, audit history, retention controls and confirmation before changing policy. Enterprise trust-focused RTL design."
+    }
+  ]
+}
