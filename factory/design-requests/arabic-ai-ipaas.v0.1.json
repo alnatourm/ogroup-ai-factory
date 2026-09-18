@@ -50,5 +50,6 @@
       "deviceType": "DESKTOP",
       "prompt": "Design the Data Policy screen for Arabic AI iPaaS. Make three distinct policy choices understandable: Private Only, Anonymous Telemetry, Explicit Improvement-Data Opt-In. Explain what each stores and what never enters training by default. Show current policy, audit history, retention controls and confirmation before changing policy. Enterprise trust-focused RTL design."
     }
-  ]
+  ],
+  "runLabel": "retry-after-generated-assets-fix"
 }
