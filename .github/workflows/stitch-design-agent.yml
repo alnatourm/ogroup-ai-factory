@@ -5,9 +5,8 @@ on:
     branches: [main]
     paths:
       - 'factory/design-requests/**'
+      - 'factory/design-triggers/**'
       - '.github/workflows/stitch-design-agent.yml'
-  issues:
-    types: [opened]
   workflow_dispatch:
     inputs:
       request_path:
@@ -17,11 +16,9 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 jobs:
   design:
-    if: github.event_name != 'issues' || startsWith(github.event.issue.title, '[factory:design-run]')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -52,12 +49,8 @@ jobs:
         shell: bash
         env:
           DISPATCH_REQUEST_PATH: ${{ inputs.request_path || '' }}
-          ISSUE_BODY: ${{ github.event.issue.body || '' }}
         run: |
           REQUEST_PATH="$DISPATCH_REQUEST_PATH"
-          if [ -z "$REQUEST_PATH" ] && [ -n "$ISSUE_BODY" ]; then
-            REQUEST_PATH="$(printf '%s\n' "$ISSUE_BODY" | sed -n 's/^request_path=//p' | head -n 1)"
-          fi
           if [ -z "$REQUEST_PATH" ]; then
             REQUEST_PATH="factory/design-requests/arabic-ai-ipaas.v0.1.json"
           fi
@@ -182,22 +175,6 @@ jobs:
       - name: Enforce Design Agent result
         if: steps.design.outcome != 'success'
         run: exit 1
-
-      - name: Report command result
-        if: always() && github.event_name == 'issues'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          if [ -f factory/status/design-review-agent.latest.json ]; then
-            STATUS="$(node -p "JSON.parse(require('fs').readFileSync('factory/status/design-review-agent.latest.json','utf8')).status")"
-            SCORE="$(node -p "JSON.parse(require('fs').readFileSync('factory/status/design-review-agent.latest.json','utf8')).score ?? 'n/a'")"
-            gh issue comment "$ISSUE_NUMBER" --body "Factory design command completed: **$STATUS** (score: $SCORE). Run: $GITHUB_RUN_ID"
-          else
-            gh issue comment "$ISSUE_NUMBER" --body "Factory design command did not produce a review result. Run: $GITHUB_RUN_ID"
-          fi
-          gh issue close "$ISSUE_NUMBER" --reason completed
 
       - name: Enforce Design Review result
         if: steps.design.outcome == 'success' && steps.review.outcome != 'success'
