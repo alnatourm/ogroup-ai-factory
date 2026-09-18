@@ -46,5 +46,9 @@ describe('Design Review Agent', () => {
     const result = await reviewGeneratedDesign(request, generated, async () => risky);
     expect(result.status).toBe('DESIGN_REVISION_REQUIRED');
     expect(result.blockingIssues.some((issue) => issue.includes('credential-like'))).toBe(true);
+    const evidence = result.screens[0]?.secretEvidence[0];
+    expect(evidence?.kind).toBe('openai-like-key');
+    expect(evidence?.context).toContain('[REDACTED openai-like-key]');
+    expect(evidence?.context).not.toContain('sk-12345678901234567890');
   });
 });
