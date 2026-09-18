@@ -14,7 +14,7 @@ on:
         default: factory/design-requests/arabic-ai-ipaas.v0.1.json
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   design:
@@ -52,11 +52,58 @@ jobs:
           test -f "$REQUEST_PATH"
 
       - name: Run Design Agent
+        id: design
+        continue-on-error: true
         run: npx tsx packages/stitch-design-adapter/src/cli.ts "${{ steps.request.outputs.request_path }}" > stitch-design-result.json
 
+      - name: Record Design Agent status
+        if: always()
+        shell: bash
+        env:
+          DESIGN_OUTCOME: ${{ steps.design.outcome }}
+          REQUEST_PATH: ${{ steps.request.outputs.request_path }}
+        run: |
+          mkdir -p factory/status
+          if [ "$DESIGN_OUTCOME" = "success" ]; then
+            STATUS="SUCCESS"
+          else
+            STATUS="FAILED"
+          fi
+          cat > factory/status/stitch-design-agent.latest.json <<EOF
+          {
+            "workflow": "Stitch Design Agent",
+            "status": "$STATUS",
+            "runId": "${GITHUB_RUN_ID}",
+            "runAttempt": "${GITHUB_RUN_ATTEMPT}",
+            "commitSha": "${GITHUB_SHA}",
+            "requestPath": "$REQUEST_PATH",
+            "resultArtifactExpected": $([ "$STATUS" = "SUCCESS" ] && echo true || echo false)
+          }
+          EOF
+
       - name: Publish Design Agent result
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stitch-design-result
-          path: stitch-design-result.json
-          if-no-files-found: error
+          path: |
+            stitch-design-result.json
+            factory/status/stitch-design-agent.latest.json
+          if-no-files-found: warn
+
+      - name: Persist Factory status
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "ogroup-ai-factory"
+          git config user.email "actions@users.noreply.github.com"
+          git add factory/status/stitch-design-agent.latest.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore(factory): record Stitch Design Agent status [skip ci]"
+          git push origin HEAD:main
+
+      - name: Enforce Design Agent result
+        if: steps.design.outcome != 'success'
+        run: exit 1
