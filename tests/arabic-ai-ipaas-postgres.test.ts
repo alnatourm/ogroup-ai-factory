@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { hashApiKey } from '../apps/arabic-ai-ipaas-api/src/auth.js';
@@ -15,7 +16,7 @@ describeDb('Arabic AI iPaaS PostgreSQL capability proof', () => {
     const pool = new Pool({ connectionString: databaseUrl });
     try {
       const migration = await fs.readFile(
-        new URL('../products/arabic-ai-ipaas/migrations/0001_initial.sql', import.meta.url),
+        path.resolve(process.cwd(), 'products/arabic-ai-ipaas/migrations/0001_initial.sql'),
         'utf8',
       );
       await pool.query(migration);
