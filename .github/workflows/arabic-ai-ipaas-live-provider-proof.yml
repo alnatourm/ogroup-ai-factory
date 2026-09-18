@@ -1,0 +1,53 @@
+name: Arabic AI iPaaS Live Provider Proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - product/arabic-ai-ipaas-database-v0.1
+    paths:
+      - 'tests/arabic-ai-ipaas-live-provider.test.ts'
+      - '.github/workflows/arabic-ai-ipaas-live-provider-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  live-provider-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LIVE_PROVIDER_API_KEY: ${{ secrets.ARABIC_IPAAS_LIVE_PROVIDER_API_KEY }}
+      LIVE_PROVIDER_BASE_URL: ${{ vars.ARABIC_IPAAS_LIVE_PROVIDER_BASE_URL }}
+      LIVE_PROVIDER_MODEL: ${{ vars.ARABIC_IPAAS_LIVE_PROVIDER_MODEL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Require controlled provider configuration
+        shell: bash
+        run: |
+          if [ -z "$LIVE_PROVIDER_API_KEY" ]; then
+            echo "::error::ARABIC_IPAAS_LIVE_PROVIDER_API_KEY is not configured."
+            exit 20
+          fi
+          if [ -z "$LIVE_PROVIDER_BASE_URL" ]; then
+            echo "::error::ARABIC_IPAAS_LIVE_PROVIDER_BASE_URL repository variable is not configured."
+            exit 21
+          fi
+          if [ -z "$LIVE_PROVIDER_MODEL" ]; then
+            echo "::error::ARABIC_IPAAS_LIVE_PROVIDER_MODEL repository variable is not configured."
+            exit 22
+          fi
+
+      - name: Run controlled live-provider proof
+        run: npm test -- --run tests/arabic-ai-ipaas-live-provider.test.ts
