@@ -1,0 +1,64 @@
+name: Arabic AI iPaaS Backend Verification
+
+on:
+  pull_request:
+    branches:
+      - product/arabic-ai-ipaas-database-v0.1
+    paths:
+      - 'apps/arabic-ai-ipaas-api/**'
+      - 'products/arabic-ai-ipaas/**'
+      - 'tests/arabic-ai-ipaas-*.test.ts'
+      - '.github/workflows/arabic-ai-ipaas-backend-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: factory
+          POSTGRES_PASSWORD: factory
+          POSTGRES_DB: arabic_ai_ipaas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U factory -d arabic_ai_ipaas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://factory:factory@localhost:5432/arabic_ai_ipaas
+      PROVIDER_SECRET_MASTER_KEY: ci-only-provider-secret-master-key
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit and PostgreSQL capability tests
+        run: npm test -- --run tests/arabic-ai-ipaas-api.test.ts tests/arabic-ai-ipaas-postgres.test.ts
+
+      - name: Record capability summary
+        if: always()
+        run: |
+          echo "Backend verification exercises the real PostgreSQL 16 service, migration, tenant isolation, API-key verification, secret-redaction/unit behavior, and OpenAI-compatible outbound contract."
