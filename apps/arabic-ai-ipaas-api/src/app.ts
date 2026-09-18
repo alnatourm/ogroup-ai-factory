@@ -151,7 +151,8 @@ export function createApp(options: {
   app.delete('/v1/provider-connections/:id', requireWriteRole, async (req, res, next) => {
     try {
       const workspaceId = getContext(req).workspaceId;
-      if (!(await repository.remove(workspaceId, req.params.id))) {
+      const providerId = req.params.id;
+      if (typeof providerId !== 'string' || !(await repository.remove(workspaceId, providerId))) {
         res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
         return;
       }
