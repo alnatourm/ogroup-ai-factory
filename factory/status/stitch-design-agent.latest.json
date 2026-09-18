@@ -1,9 +1,10 @@
 {
   "workflow": "Stitch Design Agent",
-  "status": "FAILED",
-  "runId": "35327675534",
+  "status": "SUCCESS",
+  "runId": "35329788898",
   "runAttempt": "1",
-  "commitSha": "fe5b67bda2b91ef3b3e9fcfa18cfbe752fb205bc",
+  "commitSha": "ac8e0b2b4c19a1d2e0c5940d8fdd1414877b96cb",
   "requestPath": "factory/design-requests/arabic-ai-ipaas.v0.1.json",
-  "resultArtifactExpected": false
+  "resultArtifactExpected": true,
+  "error": null
 }
