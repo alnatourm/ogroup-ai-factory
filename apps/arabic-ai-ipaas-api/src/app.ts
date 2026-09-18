@@ -1,0 +1,164 @@
+import crypto from 'node:crypto';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { EchoProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
+import { decryptSecret, encryptSecret, redactProvider } from './security.js';
+import { ProviderStore } from './store.js';
+import type { GatewayRequest, ProviderType, RequestContext, WorkspaceRole } from './types.js';
+
+declare global {
+  namespace Express {
+    interface Request {
+      factoryContext?: RequestContext;
+    }
+  }
+}
+
+const VALID_ROLES = new Set<WorkspaceRole>([
+  'workspace_owner',
+  'workspace_admin',
+  'developer',
+  'automation_builder',
+  'viewer',
+  'partner_admin',
+]);
+
+const VALID_PROVIDER_TYPES = new Set<ProviderType>([
+  'openai-compatible',
+  'gemini',
+  'anthropic-compatible',
+  'custom-http',
+]);
+
+function contextMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const workspaceId = req.header('x-workspace-id');
+  const userId = req.header('x-user-id');
+  const role = req.header('x-workspace-role') as WorkspaceRole | undefined;
+
+  if (!workspaceId || !userId || !role || !VALID_ROLES.has(role)) {
+    res.status(401).json({ error: 'MISSING_OR_INVALID_FACTORY_CONTEXT' });
+    return;
+  }
+
+  req.factoryContext = { workspaceId, userId, role };
+  next();
+}
+
+function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
+  const role = req.factoryContext?.role;
+  if (!role || !['workspace_owner', 'workspace_admin', 'developer'].includes(role)) {
+    res.status(403).json({ error: 'INSUFFICIENT_ROLE' });
+    return;
+  }
+  next();
+}
+
+export function createApp(options?: {
+  masterKey?: string;
+  providerStore?: ProviderStore;
+  adapter?: ProviderAdapter;
+}) {
+  const app = express();
+  const store = options?.providerStore ?? new ProviderStore();
+  const adapter = options?.adapter ?? new EchoProviderAdapter();
+  const masterKey = options?.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY ?? 'test-only-master-key';
+
+  app.disable('x-powered-by');
+  app.use(express.json({ limit: '1mb' }));
+
+  app.get('/health', (_req, res) => {
+    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.1.0' });
+  });
+
+  app.use('/v1', contextMiddleware);
+
+  app.get('/v1/provider-connections', (req, res) => {
+    const workspaceId = req.factoryContext!.workspaceId;
+    res.json({ data: store.list(workspaceId).map(redactProvider) });
+  });
+
+  app.post('/v1/provider-connections', requireWriteRole, (req, res) => {
+    const workspaceId = req.factoryContext!.workspaceId;
+    const { providerType, name, apiKey, baseUrl, modelDefault, config } = req.body as {
+      providerType?: ProviderType;
+      name?: string;
+      apiKey?: string;
+      baseUrl?: string;
+      modelDefault?: string;
+      config?: Record<string, unknown>;
+    };
+
+    if (!providerType || !VALID_PROVIDER_TYPES.has(providerType) || !name || !apiKey) {
+      res.status(400).json({ error: 'INVALID_PROVIDER_CONNECTION' });
+      return;
+    }
+
+    const provider = store.create({
+      workspaceId,
+      providerType,
+      name,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...(modelDefault ? { modelDefault } : {}),
+      secretCiphertext: encryptSecret(apiKey, masterKey),
+      ...(config ? { config } : {}),
+    });
+
+    res.status(201).json({ data: redactProvider(provider) });
+  });
+
+  app.delete('/v1/provider-connections/:id', requireWriteRole, (req, res) => {
+    const workspaceId = req.factoryContext!.workspaceId;
+    if (!store.remove(workspaceId, req.params.id)) {
+      res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
+      return;
+    }
+    res.status(204).end();
+  });
+
+  app.post('/v1/chat/completions', async (req, res, next) => {
+    try {
+      const workspaceId = req.factoryContext!.workspaceId;
+      const providers = store.list(workspaceId).filter((item) => item.status === 'active');
+      const provider = providers[0];
+      if (!provider) {
+        res.status(409).json({ error: 'NO_ACTIVE_PROVIDER_CONNECTION' });
+        return;
+      }
+
+      const input = req.body as GatewayRequest;
+      if (!Array.isArray(input.messages) || input.messages.length === 0) {
+        res.status(400).json({ error: 'MESSAGES_REQUIRED' });
+        return;
+      }
+
+      const secret = decryptSecret(provider.secretCiphertext, masterKey);
+      const completion = await adapter.complete(input, secret);
+      const created = Math.floor(Date.now() / 1000);
+
+      res.json({
+        id: `chatcmpl_${crypto.randomUUID()}`,
+        object: 'chat.completion',
+        created,
+        model: completion.model,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: completion.content },
+          finish_reason: 'stop',
+        }],
+        usage: {
+          prompt_tokens: completion.promptTokens,
+          completion_tokens: completion.completionTokens,
+          total_tokens: completion.promptTokens + completion.completionTokens,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+    res.status(500).json({ error: 'INTERNAL_ERROR', message });
+  });
+
+  return app;
+}
