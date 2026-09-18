@@ -6,7 +6,7 @@
       "key": "workspace-onboarding",
       "title": "Workspace Onboarding",
       "deviceType": "DESKTOP",
-      "prompt": "Design an Arabic-first SaaS workspace onboarding screen for Arabic AI iPaaS. Primary direction RTL with excellent bilingual Arabic/English support. Clean enterprise interface, simple 3-step onboarding: workspace details, data region/policy, first AI provider. The product connects Arabic users and business systems to any AI model. Avoid decorative clutter. Make progress, privacy, and BYOAI clear."
+      "prompt": "Design an Arabic-first SaaS workspace onboarding screen for Arabic AI iPaaS. Primary direction RTL with excellent bilingual Arabic/English support. Clean enterprise interface, simple 3-step onboarding: workspace details, data region/policy, first AI provider. The product connects Arabic users and business systems to any AI model. Avoid decorative clutter. Make progress, privacy, and BYOAI clear. Security requirement: any API-key field must be empty by default. Never prefill, embed, or hard-code any credential-like value in HTML, including fake or example sk- keys. Use only a neutral placeholder such as 'أدخل مفتاح API' with an empty value."
     },
     {
       "key": "provider-connections",
@@ -51,5 +51,5 @@
       "prompt": "Design the Data Policy screen for Arabic AI iPaaS. Make three distinct policy choices understandable: Private Only, Anonymous Telemetry, Explicit Improvement-Data Opt-In. Explain what each stores and what never enters training by default. Show current policy, audit history, retention controls and confirmation before changing policy. Enterprise trust-focused RTL design."
     }
   ],
-  "runLabel": "inspect-secret-evidence"
+  "runLabel": "regenerate-onboarding-with-empty-credentials"
 }
