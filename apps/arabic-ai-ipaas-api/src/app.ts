@@ -1,16 +1,22 @@
 import crypto from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { EchoProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
+import type { ApiKeyVerifier } from './auth.js';
+import { MemoryProviderRepository } from './memory-repository.js';
+import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
+import type { ProviderRepository } from './postgres.js';
 import { decryptSecret, encryptSecret, redactProvider } from './security.js';
-import { ProviderStore } from './store.js';
 import type { GatewayRequest, ProviderType, RequestContext, WorkspaceRole } from './types.js';
 
-declare global {
-  namespace Express {
-    interface Request {
-      factoryContext?: RequestContext;
-    }
-  }
+type FactoryRequest = Request & { factoryContext?: RequestContext };
+
+function setContext(req: Request, context: RequestContext): void {
+  (req as FactoryRequest).factoryContext = context;
+}
+
+function getContext(req: Request): RequestContext {
+  const context = (req as FactoryRequest).factoryContext;
+  if (!context) throw new Error('FACTORY_CONTEXT_MISSING');
+  return context;
 }
 
 const VALID_ROLES = new Set<WorkspaceRole>([
@@ -29,22 +35,42 @@ const VALID_PROVIDER_TYPES = new Set<ProviderType>([
   'custom-http',
 ]);
 
-function contextMiddleware(req: Request, res: Response, next: NextFunction): void {
-  const workspaceId = req.header('x-workspace-id');
-  const userId = req.header('x-user-id');
-  const role = req.header('x-workspace-role') as WorkspaceRole | undefined;
+function buildContextMiddleware(
+  apiKeyVerifier: ApiKeyVerifier | undefined,
+  allowInsecureTestHeaders: boolean,
+) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const auth = req.header('authorization');
+    if (auth?.startsWith('Bearer ') && apiKeyVerifier) {
+      const verified = await apiKeyVerifier.verify(auth.slice('Bearer '.length).trim());
+      if (verified) {
+        setContext(req, {
+          workspaceId: verified.workspaceId,
+          userId: verified.userId,
+          role: verified.role,
+        });
+        next();
+        return;
+      }
+    }
 
-  if (!workspaceId || !userId || !role || !VALID_ROLES.has(role)) {
-    res.status(401).json({ error: 'MISSING_OR_INVALID_FACTORY_CONTEXT' });
-    return;
-  }
+    if (allowInsecureTestHeaders) {
+      const workspaceId = req.header('x-workspace-id');
+      const userId = req.header('x-user-id');
+      const role = req.header('x-workspace-role') as WorkspaceRole | undefined;
+      if (workspaceId && userId && role && VALID_ROLES.has(role)) {
+        setContext(req, { workspaceId, userId, role });
+        next();
+        return;
+      }
+    }
 
-  req.factoryContext = { workspaceId, userId, role };
-  next();
+    res.status(401).json({ error: 'INVALID_AUTHENTICATION' });
+  };
 }
 
 function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  const role = req.factoryContext?.role;
+  const role = getContext(req).role;
   if (!role || !['workspace_owner', 'workspace_admin', 'developer'].includes(role)) {
     res.status(403).json({ error: 'INSUFFICIENT_ROLE' });
     return;
@@ -52,75 +78,102 @@ function requireWriteRole(req: Request, res: Response, next: NextFunction): void
   next();
 }
 
-export function createApp(options?: {
+export function createApp(options: {
   masterKey?: string;
-  providerStore?: ProviderStore;
+  providerRepository?: ProviderRepository;
   adapter?: ProviderAdapter;
-}) {
+  apiKeyVerifier?: ApiKeyVerifier;
+  allowInsecureTestHeaders?: boolean;
+} = {}) {
   const app = express();
-  const store = options?.providerStore ?? new ProviderStore();
-  const adapter = options?.adapter ?? new EchoProviderAdapter();
-  const masterKey = options?.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY ?? 'test-only-master-key';
+  const repository = options.providerRepository ?? new MemoryProviderRepository();
+  const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
+  const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
+
+  if (!masterKey) {
+    throw new Error('PROVIDER_SECRET_MASTER_KEY_REQUIRED');
+  }
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.1.0' });
+    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.2.0' });
   });
 
-  app.use('/v1', contextMiddleware);
+  app.use(
+    '/v1',
+    buildContextMiddleware(options.apiKeyVerifier, options.allowInsecureTestHeaders === true),
+  );
 
-  app.get('/v1/provider-connections', (req, res) => {
-    const workspaceId = req.factoryContext!.workspaceId;
-    res.json({ data: store.list(workspaceId).map(redactProvider) });
-  });
-
-  app.post('/v1/provider-connections', requireWriteRole, (req, res) => {
-    const workspaceId = req.factoryContext!.workspaceId;
-    const { providerType, name, apiKey, baseUrl, modelDefault, config } = req.body as {
-      providerType?: ProviderType;
-      name?: string;
-      apiKey?: string;
-      baseUrl?: string;
-      modelDefault?: string;
-      config?: Record<string, unknown>;
-    };
-
-    if (!providerType || !VALID_PROVIDER_TYPES.has(providerType) || !name || !apiKey) {
-      res.status(400).json({ error: 'INVALID_PROVIDER_CONNECTION' });
-      return;
+  app.get('/v1/provider-connections', async (req, res, next) => {
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      res.json({ data: (await repository.list(workspaceId)).map(redactProvider) });
+    } catch (error) {
+      next(error);
     }
-
-    const provider = store.create({
-      workspaceId,
-      providerType,
-      name,
-      ...(baseUrl ? { baseUrl } : {}),
-      ...(modelDefault ? { modelDefault } : {}),
-      secretCiphertext: encryptSecret(apiKey, masterKey),
-      ...(config ? { config } : {}),
-    });
-
-    res.status(201).json({ data: redactProvider(provider) });
   });
 
-  app.delete('/v1/provider-connections/:id', requireWriteRole, (req, res) => {
-    const workspaceId = req.factoryContext!.workspaceId;
-    if (!store.remove(workspaceId, req.params.id)) {
-      res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
-      return;
+  app.post('/v1/provider-connections', requireWriteRole, async (req, res, next) => {
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      const { providerType, name, apiKey, baseUrl, modelDefault, config } = req.body as {
+        providerType?: ProviderType;
+        name?: string;
+        apiKey?: string;
+        baseUrl?: string;
+        modelDefault?: string;
+        config?: Record<string, unknown>;
+      };
+
+      if (!providerType || !VALID_PROVIDER_TYPES.has(providerType) || !name || !apiKey) {
+        res.status(400).json({ error: 'INVALID_PROVIDER_CONNECTION' });
+        return;
+      }
+
+      const provider = await repository.create({
+        workspaceId,
+        providerType,
+        name,
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(modelDefault ? { modelDefault } : {}),
+        secretCiphertext: encryptSecret(apiKey, masterKey),
+        ...(config ? { config } : {}),
+      });
+
+      res.status(201).json({ data: redactProvider(provider) });
+    } catch (error) {
+      next(error);
     }
-    res.status(204).end();
+  });
+
+  app.delete('/v1/provider-connections/:id', requireWriteRole, async (req, res, next) => {
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      const providerId = req.params.id;
+      if (typeof providerId !== 'string' || !(await repository.remove(workspaceId, providerId))) {
+        res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
+        return;
+      }
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.post('/v1/chat/completions', async (req, res, next) => {
     try {
-      const workspaceId = req.factoryContext!.workspaceId;
-      const providers = store.list(workspaceId).filter((item) => item.status === 'active');
+      const workspaceId = getContext(req).workspaceId;
+      const providers = (await repository.list(workspaceId)).filter((item) => item.status === 'active');
       const provider = providers[0];
       if (!provider) {
         res.status(409).json({ error: 'NO_ACTIVE_PROVIDER_CONNECTION' });
+        return;
+      }
+
+      if (provider.providerType !== 'openai-compatible') {
+        res.status(501).json({ error: 'PROVIDER_ADAPTER_NOT_IMPLEMENTED', providerType: provider.providerType });
         return;
       }
 
@@ -131,7 +184,7 @@ export function createApp(options?: {
       }
 
       const secret = decryptSecret(provider.secretCiphertext, masterKey);
-      const completion = await adapter.complete(input, secret);
+      const completion = await adapter.complete(input, provider, secret);
       const created = Math.floor(Date.now() / 1000);
 
       res.json({

@@ -34,6 +34,8 @@ export function decryptSecret(payload: string, masterKey: string): string {
 export function redactProvider<T extends { secretCiphertext: string }>(
   provider: T,
 ): Omit<T, 'secretCiphertext'> & { hasSecret: boolean } {
-  const { secretCiphertext: _secretCiphertext, ...safe } = provider;
+  const safe = Object.fromEntries(
+    Object.entries(provider).filter(([key]) => key !== 'secretCiphertext'),
+  ) as Omit<T, 'secretCiphertext'>;
   return { ...safe, hasSecret: true };
 }

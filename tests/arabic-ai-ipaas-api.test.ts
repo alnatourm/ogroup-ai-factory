@@ -1,6 +1,8 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { hashApiKey, InMemoryApiKeyVerifier } from '../apps/arabic-ai-ipaas-api/src/auth.js';
 import { createApp } from '../apps/arabic-ai-ipaas-api/src/app.js';
+import { OpenAICompatibleProviderAdapter } from '../apps/arabic-ai-ipaas-api/src/provider-adapter.js';
 
 const ownerHeaders = {
   'x-workspace-id': 'workspace-a',
@@ -8,14 +10,51 @@ const ownerHeaders = {
   'x-workspace-role': 'workspace_owner',
 };
 
-describe('Arabic AI iPaaS control API v0.1', () => {
-  it('requires workspace context', async () => {
-    const response = await request(createApp()).get('/v1/provider-connections');
+function testApp() {
+  return createApp({
+    masterKey: 'unit-test-master-key',
+    allowInsecureTestHeaders: true,
+  });
+}
+
+describe('Arabic AI iPaaS control API v0.2', () => {
+  it('fails closed when the provider encryption key is missing', () => {
+    const previous = process.env.PROVIDER_SECRET_MASTER_KEY;
+    delete process.env.PROVIDER_SECRET_MASTER_KEY;
+    expect(() => createApp()).toThrow('PROVIDER_SECRET_MASTER_KEY_REQUIRED');
+    if (previous) process.env.PROVIDER_SECRET_MASTER_KEY = previous;
+  });
+
+  it('requires authentication', async () => {
+    const response = await request(testApp()).get('/v1/provider-connections');
     expect(response.status).toBe(401);
   });
 
+  it('accepts verified bearer API keys', async () => {
+    const rawKey = 'factory_test_key';
+    const verifier = new InMemoryApiKeyVerifier(new Map([
+      [hashApiKey(rawKey), {
+        apiKeyId: 'key-1',
+        workspaceId: 'workspace-a',
+        userId: 'api-key:key-1',
+        role: 'developer',
+        scopes: ['gateway:write'],
+      }],
+    ]));
+    const app = createApp({
+      masterKey: 'unit-test-master-key',
+      apiKeyVerifier: verifier,
+    });
+
+    const response = await request(app)
+      .get('/v1/provider-connections')
+      .set('authorization', `Bearer ${rawKey}`);
+
+    expect(response.status).toBe(200);
+  });
+
   it('never returns provider secrets', async () => {
-    const app = createApp({ masterKey: 'unit-test-master-key' });
+    const app = testApp();
     const created = await request(app)
       .post('/v1/provider-connections')
       .set(ownerHeaders)
@@ -36,9 +75,9 @@ describe('Arabic AI iPaaS control API v0.1', () => {
   });
 
   it('isolates provider connections by workspace', async () => {
-    const app = createApp({ masterKey: 'unit-test-master-key' });
+    const app = testApp();
     await request(app).post('/v1/provider-connections').set(ownerHeaders).send({
-      providerType: 'gemini',
+      providerType: 'openai-compatible',
       name: 'A provider',
       apiKey: 'workspace-a-secret',
     });
@@ -55,25 +94,64 @@ describe('Arabic AI iPaaS control API v0.1', () => {
     expect(other.body.data).toEqual([]);
   });
 
-  it('serves an OpenAI-compatible completion shape through the provider adapter', async () => {
-    const app = createApp({ masterKey: 'unit-test-master-key' });
+  it('calls an OpenAI-compatible upstream without exposing the stored secret', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toEqual(expect.objectContaining({
+        authorization: 'Bearer adapter-secret',
+      }));
+      return new Response(JSON.stringify({
+        model: 'pilot-model',
+        choices: [{ message: { content: 'أهلاً بك' } }],
+        usage: { prompt_tokens: 7, completion_tokens: 3 },
+      }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const adapter = new OpenAICompatibleProviderAdapter(fetchMock as typeof fetch);
+    const app = createApp({
+      masterKey: 'unit-test-master-key',
+      adapter,
+      allowInsecureTestHeaders: true,
+    });
+
     await request(app).post('/v1/provider-connections').set(ownerHeaders).send({
       providerType: 'openai-compatible',
       name: 'Primary',
       apiKey: 'adapter-secret',
+      baseUrl: 'https://provider.example',
+      modelDefault: 'pilot-model',
     });
 
     const response = await request(app)
       .post('/v1/chat/completions')
       .set(ownerHeaders)
       .send({
-        model: 'pilot-model',
         messages: [{ role: 'user', content: 'مرحبا بالعالم' }],
       });
 
     expect(response.status).toBe(200);
     expect(response.body.object).toBe('chat.completion');
-    expect(response.body.choices[0].message.role).toBe('assistant');
-    expect(response.body.choices[0].message.content).toContain('مرحبا بالعالم');
+    expect(response.body.choices[0].message.content).toBe('أهلاً بك');
+    expect(response.body.usage.total_tokens).toBe(10);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('rejects insecure provider URLs in production adapter', async () => {
+    const adapter = new OpenAICompatibleProviderAdapter(vi.fn() as unknown as typeof fetch);
+    await expect(adapter.complete({
+      messages: [{ role: 'user', content: 'test' }],
+    }, {
+      id: 'p1',
+      workspaceId: 'w1',
+      providerType: 'openai-compatible',
+      name: 'unsafe',
+      baseUrl: 'http://localhost:1234',
+      secretCiphertext: 'encrypted',
+      config: {},
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }, 'secret')).rejects.toThrow('PROVIDER_BASE_URL_MUST_USE_HTTPS');
   });
 });
