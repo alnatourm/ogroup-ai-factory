@@ -4,8 +4,8 @@
   "name": "Arabic AI iPaaS",
   "factoryVersion": "1.0.0",
   "branch": "product/arabic-ai-ipaas-v0.1",
-  "stage": "ARCHITECTURE",
-  "status": "READY_FOR_DESIGN",
+  "stage": "DATABASE",
+  "status": "READY_FOR_BACKEND_BUILD",
   "owner": "Product Owner",
   "orchestrator": "OGroup AI Factory Orchestrator",
   "referenceProduct": "CVIDEO",
@@ -26,31 +26,53 @@
     "workflow schema",
     "deployment topology",
     "security boundaries",
-    "MVP build slices"
+    "MVP build slices",
+    "design review pass 100/100",
+    "database model",
+    "tenant isolation schema",
+    "secret storage schema",
+    "workflow persistence schema",
+    "document persistence schema",
+    "audit and learning data zones",
+    "initial PostgreSQL migration"
   ],
-  "nextAgent": "DESIGN",
+  "nextAgent": "BACKEND_BUILD",
   "requiredNextOutputs": [
-    "screen inventory",
-    "navigation map",
-    "workspace onboarding flow",
-    "provider connection flow",
-    "gateway playground flow",
-    "Arabic workflow builder UX",
-    "document ingestion UX",
-    "usage dashboard",
-    "data policy UX",
-    "Stitch-ready design prompt"
+    "control API scaffold",
+    "workspace auth and membership enforcement",
+    "provider connection CRUD with encrypted secret handling",
+    "OpenAI-compatible gateway endpoint",
+    "provider adapter interface",
+    "gateway route resolution",
+    "workflow CRUD and run skeleton",
+    "document upload metadata endpoints",
+    "tenant-isolation integration tests"
   ],
   "gates": {
     "productBrief": "PASS",
     "requirements": "PASS",
     "architecture": "PASS",
-    "design": "PENDING",
+    "design": "PASS",
     "build": "PENDING",
     "reviewSecurity": "PENDING",
     "test": "PENDING",
     "deploy": "PENDING",
     "qc": "PENDING",
-    "owner": "PENDING"
+    "owner": "PENDING",
+    "database": "PASS"
+  },
+  "designEvidence": {
+    "runId": "35373958602",
+    "status": "DESIGN_PASS",
+    "score": 100,
+    "stitchProjectId": "13642085509702935579",
+    "screensPassed": "8/8",
+    "limitation": "Structural/content review only; pixel-level visual QA remains a later gate."
+  },
+  "databaseEvidence": {
+    "version": "0.1",
+    "engine": "PostgreSQL 16+",
+    "migration": "products/arabic-ai-ipaas/migrations/0001_initial.sql",
+    "contract": "products/arabic-ai-ipaas/database.v0.1.json"
   }
 }

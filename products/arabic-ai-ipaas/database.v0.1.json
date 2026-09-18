@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "databaseVersion": "0.1",
+  "status": "FROZEN_FOR_BUILD",
+  "engine": "postgresql",
+  "minimumVersion": 16,
+  "tenancy": {
+    "strategy": "workspace-scoped",
+    "workspaceColumn": "workspace_id",
+    "rlsRequiredBeforeProduction": true
+  },
+  "tables": [
+    "workspaces",
+    "users",
+    "workspace_members",
+    "api_keys",
+    "provider_connections",
+    "gateway_routes",
+    "glossaries",
+    "glossary_entries",
+    "workflows",
+    "workflow_runs",
+    "workflow_step_runs",
+    "documents",
+    "document_extractions",
+    "gateway_traces",
+    "audit_events",
+    "improvement_examples"
+  ],
+  "secretPolicy": {
+    "apiKeys": "hash-only",
+    "providerCredentials": "encrypted-ciphertext-or-vault-reference",
+    "plaintextSecretsAllowed": false
+  },
+  "dataZones": [
+    "PRIVATE",
+    "ANONYMOUS_TELEMETRY",
+    "IMPROVEMENT_OPT_IN"
+  ],
+  "canonicalFormats": {
+    "workflow": "workflow-json-v1",
+    "documentExtraction": "document-extraction-json-v1"
+  },
+  "nextAgent": "BACKEND_BUILD"
+}
