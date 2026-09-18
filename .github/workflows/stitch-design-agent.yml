@@ -1,0 +1,53 @@
+name: Stitch Design Agent
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'factory/design-requests/**'
+  workflow_dispatch:
+    inputs:
+      request_path:
+        description: Path to a Factory Design Agent request JSON file
+        required: true
+        default: factory/design-requests/arabic-ai-ipaas.v0.1.json
+
+permissions:
+  contents: read
+
+jobs:
+  design:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      STITCH_API_KEY: ${{ secrets.STITCH_API_KEY }}
+
+    steps:
+      - name: Checkout Factory
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Validate Stitch configuration
+        shell: bash
+        run: |
+          if [ -z "$STITCH_API_KEY" ]; then
+            echo "NEEDS_FACTORY_CONFIGURATION: STITCH_API_KEY is not configured."
+            exit 1
+          fi
+
+      - name: Run Design Agent
+        run: npx tsx packages/stitch-design-adapter/src/cli.ts "${{ inputs.request_path }}" > stitch-design-result.json
+
+      - name: Publish Design Agent result
+        uses: actions/upload-artifact@v4
+        with:
+          name: stitch-design-result
+          path: stitch-design-result.json
+          if-no-files-found: error
