@@ -7,7 +7,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
@@ -15,6 +16,7 @@
     "supertest": "^7.1.0",
     "@types/supertest": "^6.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@types/pg": "^8.11.10"
   }
 }
