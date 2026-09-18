@@ -1,6 +1,10 @@
 name: Stitch Design Agent
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'factory/design-requests/**'
   workflow_dispatch:
     inputs:
       request_path:
