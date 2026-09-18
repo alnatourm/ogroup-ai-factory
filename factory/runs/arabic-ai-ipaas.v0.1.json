@@ -4,8 +4,8 @@
   "name": "Arabic AI iPaaS",
   "factoryVersion": "1.0.0",
   "branch": "product/arabic-ai-ipaas-v0.1",
-  "stage": "PRODUCT_BA",
-  "status": "READY_FOR_ARCHITECTURE",
+  "stage": "ARCHITECTURE",
+  "status": "READY_FOR_DESIGN",
   "owner": "Product Owner",
   "orchestrator": "OGroup AI Factory Orchestrator",
   "referenceProduct": "CVIDEO",
@@ -17,10 +17,7 @@
     "MVP module definition",
     "critical journeys",
     "acceptance criteria",
-    "non-goals"
-  ],
-  "nextAgent": "ARCHITECTURE",
-  "requiredNextOutputs": [
+    "non-goals",
     "system architecture",
     "service boundaries",
     "data model",
@@ -31,10 +28,23 @@
     "security boundaries",
     "MVP build slices"
   ],
+  "nextAgent": "DESIGN",
+  "requiredNextOutputs": [
+    "screen inventory",
+    "navigation map",
+    "workspace onboarding flow",
+    "provider connection flow",
+    "gateway playground flow",
+    "Arabic workflow builder UX",
+    "document ingestion UX",
+    "usage dashboard",
+    "data policy UX",
+    "Stitch-ready design prompt"
+  ],
   "gates": {
     "productBrief": "PASS",
     "requirements": "PASS",
-    "architecture": "PENDING",
+    "architecture": "PASS",
     "design": "PENDING",
     "build": "PENDING",
     "reviewSecurity": "PENDING",
