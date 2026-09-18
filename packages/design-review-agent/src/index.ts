@@ -43,6 +43,10 @@ export interface ScreenReview {
     noExposedSecrets: boolean;
   };
   warnings: string[];
+  secretEvidence: Array<{
+    kind: string;
+    context: string;
+  }>;
 }
 
 export interface DesignReviewResult {
@@ -68,10 +72,10 @@ export type HtmlFetcher = (url: string) => Promise<string>;
 
 const ARABIC_RE = /[\u0600-\u06ff]/g;
 const SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{16,}\b/,
-  /\bAIza[0-9A-Za-z_-]{20,}\b/,
-  /(?:api[_ -]?key|secret|token)\s*[:=]\s*["'][^"']{12,}["']/i,
-];
+  { kind: 'openai-like-key', pattern: /\bsk-[A-Za-z0-9_-]{16,}\b/i },
+  { kind: 'google-like-key', pattern: /\bAIza[0-9A-Za-z_-]{20,}\b/ },
+  { kind: 'named-credential-assignment', pattern: /(?:api[_ -]?key|secret|token)\s*[:=]\s*["'][^"']{12,}["']/i },
+] as const;
 
 function ratioArabic(text: string): number {
   const compact = text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -96,8 +100,28 @@ function hasViewport(html: string): boolean {
   return /<meta[^>]+name\s*=\s*["']viewport["']/i.test(html);
 }
 
-function hasExposedSecret(html: string): boolean {
-  return SECRET_PATTERNS.some((pattern) => pattern.test(html));
+function findSecretEvidence(html: string): Array<{ kind: string; context: string }> {
+  const evidence: Array<{ kind: string; context: string }> = [];
+
+  for (const entry of SECRET_PATTERNS) {
+    const match = entry.pattern.exec(html);
+    if (!match || match.index === undefined) continue;
+
+    const start = Math.max(0, match.index - 80);
+    const end = Math.min(html.length, match.index + match[0].length + 80);
+    const rawContext = html.slice(start, end);
+    const redacted = rawContext
+      .replace(match[0], `[REDACTED ${entry.kind}]`)
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    evidence.push({
+      kind: entry.kind,
+      context: redacted.slice(0, 240),
+    });
+  }
+
+  return evidence;
 }
 
 export async function defaultHtmlFetcher(url: string): Promise<string> {
@@ -159,7 +183,8 @@ export async function reviewGeneratedDesign(
     const rtl = htmlFetched && hasRtl(html);
     const interactive = htmlFetched && hasInteraction(html);
     const responsiveViewport = htmlFetched && hasViewport(html);
-    const noExposedSecrets = !htmlFetched || !hasExposedSecret(html);
+    const secretEvidence = htmlFetched ? findSecretEvidence(html) : [];
+    const noExposedSecrets = secretEvidence.length === 0;
 
     if (htmlFetched && !arabicContent) warnings.push('Arabic content is weak or absent.');
     if (htmlFetched && !rtl) warnings.push('No explicit RTL signal detected.');
@@ -197,6 +222,7 @@ export async function reviewGeneratedDesign(
         noExposedSecrets,
       },
       warnings,
+      secretEvidence,
     });
   }
 

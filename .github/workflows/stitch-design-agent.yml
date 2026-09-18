@@ -123,6 +123,9 @@ jobs:
             projectId: review?.projectId ?? null,
             summary: review?.summary ?? null,
             blockingIssues: review?.blockingIssues ?? [],
+            secretEvidence: (review?.screens ?? [])
+              .filter((screen) => Array.isArray(screen.secretEvidence) && screen.secretEvidence.length > 0)
+              .map((screen) => ({ key: screen.key, evidence: screen.secretEvidence })),
             limitations: review?.limitations ?? [],
             runId: process.env.GITHUB_RUN_ID,
             commitSha: process.env.GITHUB_SHA
