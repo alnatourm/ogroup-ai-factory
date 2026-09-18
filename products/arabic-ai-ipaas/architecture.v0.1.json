@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "architectureVersion": "0.1",
+  "status": "FROZEN_FOR_DESIGN",
+  "style": "service-oriented-modular",
+  "byoai": true,
+  "services": [
+    "control-api",
+    "arabic-ai-gateway",
+    "provider-adapters",
+    "workflow-orchestrator",
+    "document-intelligence",
+    "arabic-action-intent",
+    "learning-pipeline"
+  ],
+  "infrastructure": [
+    "postgresql",
+    "redis",
+    "object-storage",
+    "secret-encryption"
+  ],
+  "tenancy": {
+    "strategy": "workspace-scoped",
+    "required": true
+  },
+  "dataZones": [
+    "PRIVATE",
+    "ANONYMOUS_TELEMETRY",
+    "IMPROVEMENT_OPT_IN"
+  ],
+  "initialProviderAdapters": [
+    "openai-compatible",
+    "gemini",
+    "anthropic-compatible",
+    "custom-http"
+  ],
+  "canonicalWorkflowFormat": "workflow-json-v1",
+  "buildSlices": [
+    "foundation",
+    "byoai-gateway",
+    "arabic-transformation",
+    "workflow-mvp",
+    "document-intelligence",
+    "privacy-data-flywheel",
+    "pilot-hardening"
+  ],
+  "nextAgent": "DESIGN",
+  "designScope": [
+    "landing/login",
+    "workspace onboarding",
+    "provider connections",
+    "gateway playground",
+    "workflow builder",
+    "workflow run history",
+    "document ingestion",
+    "usage dashboard",
+    "data policy settings"
+  ]
+}
