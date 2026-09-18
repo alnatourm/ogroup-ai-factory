@@ -3,6 +3,7 @@ import { generateProductBootstrap, type ProductBootstrapInput } from '@ogroup/pr
 export type OrchestratorStageName =
   | 'product'
   | 'architecture'
+  | 'design'
   | 'database'
   | 'backend'
   | 'frontend'
@@ -54,6 +55,17 @@ export function orchestrateProduct(request: OrchestratorRequest): OrchestratorPl
       humanGate: true,
     },
     {
+      id: 'design',
+      title: 'UI/UX design',
+      dependsOn: ['architecture'],
+      acceptanceCriteria: [
+        'Design requirements are traceable to Product and Architecture outputs',
+        'RTL/LTR behavior is represented where applicable',
+        'Generated Stitch screens are reviewed against acceptance criteria before Build',
+      ],
+      humanGate: false,
+    },
+    {
       id: 'database',
       title: 'Database design',
       dependsOn: ['architecture'],
@@ -70,7 +82,7 @@ export function orchestrateProduct(request: OrchestratorRequest): OrchestratorPl
     {
       id: 'frontend',
       title: 'Frontend implementation',
-      dependsOn: ['architecture'],
+      dependsOn: ['architecture', 'design'],
       acceptanceCriteria: ['Arabic/English conventions preserved', 'RTL/LTR behavior verified', 'Frontend does not replace server authorization'],
       humanGate: false,
     },
