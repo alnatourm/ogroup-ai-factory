@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "backendVersion": "0.2",
+  "status": "READY_FOR_VERIFICATION",
+  "implemented": [
+    "fail-closed-secret-config",
+    "bearer-api-key-auth-contract",
+    "postgres-api-key-verifier",
+    "postgres-provider-repository",
+    "workspace-scoped-provider-access",
+    "encrypted-provider-secret-at-rest-contract",
+    "openai-compatible-https-adapter",
+    "provider-secret-redaction",
+    "insecure-provider-url-rejection"
+  ],
+  "proofRequired": [
+    "quality-gate-green",
+    "postgres-integration",
+    "controlled-real-provider-call"
+  ],
+  "gate": "PENDING"
+}
