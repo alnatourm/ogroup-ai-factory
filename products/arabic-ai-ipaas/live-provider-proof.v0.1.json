@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "proof": "controlled-live-provider",
+  "status": "READY_TO_RUN",
+  "requiredConfiguration": {
+    "secret": "ARABIC_IPAAS_LIVE_PROVIDER_API_KEY",
+    "variables": [
+      "ARABIC_IPAAS_LIVE_PROVIDER_BASE_URL",
+      "ARABIC_IPAAS_LIVE_PROVIDER_MODEL"
+    ]
+  },
+  "passCriteria": [
+    "workflow-completes-successfully",
+    "real-openai-compatible-https-request",
+    "non-empty-arabic-response",
+    "no-provider-secret-in-logs"
+  ],
+  "onPass": "BACKEND_PASS_ELIGIBLE"
+}
