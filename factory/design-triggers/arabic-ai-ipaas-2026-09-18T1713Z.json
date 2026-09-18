@@ -1,0 +1,5 @@
+{
+  "productId": "arabic-ai-ipaas",
+  "requestPath": "factory/design-requests/arabic-ai-ipaas.v0.1.json",
+  "reason": "Verify corrected onboarding credential handling through Stitch + Design Review"
+}
