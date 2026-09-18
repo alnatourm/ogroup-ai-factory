@@ -54,7 +54,10 @@ jobs:
       - name: Run Design Agent
         id: design
         continue-on-error: true
-        run: npx tsx packages/stitch-design-adapter/src/cli.ts "${{ steps.request.outputs.request_path }}" > stitch-design-result.json
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tsx packages/stitch-design-adapter/src/cli.ts "${{ steps.request.outputs.request_path }}" > stitch-design-result.json 2> >(tee stitch-design-error.log >&2)
 
       - name: Record Design Agent status
         if: always()
@@ -69,17 +72,28 @@ jobs:
           else
             STATUS="FAILED"
           fi
-          cat > factory/status/stitch-design-agent.latest.json <<EOF
-          {
-            "workflow": "Stitch Design Agent",
-            "status": "$STATUS",
-            "runId": "${GITHUB_RUN_ID}",
-            "runAttempt": "${GITHUB_RUN_ATTEMPT}",
-            "commitSha": "${GITHUB_SHA}",
-            "requestPath": "$REQUEST_PATH",
-            "resultArtifactExpected": $([ "$STATUS" = "SUCCESS" ] && echo true || echo false)
-          }
-          EOF
+          ERROR_MESSAGE=""
+          if [ -f stitch-design-error.log ]; then
+            ERROR_MESSAGE="$(tail -n 20 stitch-design-error.log | tr '\n' ' ' | sed 's/"/\\\"/g')"
+          fi
+          node - <<'NODE'
+          const fs = require('fs');
+          const status = process.env.DESIGN_OUTCOME === 'success' ? 'SUCCESS' : 'FAILED';
+          const error = fs.existsSync('stitch-design-error.log')
+            ? fs.readFileSync('stitch-design-error.log', 'utf8').trim().slice(-4000)
+            : '';
+          const payload = {
+            workflow: 'Stitch Design Agent',
+            status,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            commitSha: process.env.GITHUB_SHA,
+            requestPath: process.env.REQUEST_PATH,
+            resultArtifactExpected: status === 'SUCCESS',
+            error: error || null
+          };
+          fs.writeFileSync('factory/status/stitch-design-agent.latest.json', JSON.stringify(payload, null, 2) + '\n');
+          NODE
 
       - name: Publish Design Agent result
         if: always()
@@ -88,6 +102,7 @@ jobs:
           name: stitch-design-result
           path: |
             stitch-design-result.json
+            stitch-design-error.log
             factory/status/stitch-design-agent.latest.json
           if-no-files-found: warn
 
