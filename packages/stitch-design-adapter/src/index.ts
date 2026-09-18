@@ -51,7 +51,6 @@ export class StitchConfigurationError extends Error {
 const REQUIRED_TOOLS = [
   'create_project',
   'generate_screen_from_text',
-  'get_screen',
 ] as const;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -140,19 +139,13 @@ export class StitchDesignAdapter {
 
     const screenId = findResourceId(generated, 'screens');
 
-    let resolved: unknown = generated;
-    if (screenId) {
-      resolved = await this.client.callTool('get_screen', { projectId, screenId });
-    }
-
     return {
       key: screen.key,
       title: screen.title,
       projectId,
       screenId,
-      htmlUrl: findUrl(resolved, /html|download/i) ?? findUrl(generated, /html|download/i),
-      imageUrl: findUrl(resolved, /image|screenshot|png|jpg|jpeg|webp/i)
-        ?? findUrl(generated, /image|screenshot|png|jpg|jpeg|webp/i),
+      htmlUrl: findUrl(generated, /html|download/i),
+      imageUrl: findUrl(generated, /image|screenshot|png|jpg|jpeg|webp/i),
     };
   }
 

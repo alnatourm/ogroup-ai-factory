@@ -15,7 +15,6 @@ class FakeStitchClient implements StitchToolClientLike {
       tools: [
         { name: 'create_project' },
         { name: 'generate_screen_from_text' },
-        { name: 'get_screen' },
       ],
     };
   }
@@ -31,15 +30,9 @@ class FakeStitchClient implements StitchToolClientLike {
       return {
         result: {
           name: 'projects/project-123/screens/screen-456',
+          htmlCode: { downloadUrl: 'https://example.test/screen-456.html' },
+          screenshot: { downloadUrl: 'https://example.test/screen-456.png' },
         },
-      } as T;
-    }
-
-    if (name === 'get_screen') {
-      return {
-        name: 'projects/project-123/screens/screen-456',
-        html: 'https://example.test/screen-456.html',
-        screenshot: 'https://example.test/screen-456.png',
       } as T;
     }
 
@@ -79,7 +72,6 @@ describe('Stitch design adapter', () => {
     expect(client.calls.map((call) => call.name)).toEqual([
       'create_project',
       'generate_screen_from_text',
-      'get_screen',
     ]);
     expect(client.closed).toBe(true);
   });
