@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "name": "Arabic AI iPaaS",
+  "factoryVersion": "1.0.0",
+  "branch": "product/arabic-ai-ipaas-v0.1",
+  "stage": "PRODUCT_BA",
+  "status": "READY_FOR_ARCHITECTURE",
+  "owner": "Product Owner",
+  "orchestrator": "OGroup AI Factory Orchestrator",
+  "referenceProduct": "CVIDEO",
+  "objective": "Prove OGroup AI Factory V1 end-to-end on a new product while building an Arabic intelligence layer that connects Arabic users, documents and workflows to any AI/agent.",
+  "completed": [
+    "idea intake",
+    "product thesis",
+    "actors",
+    "MVP module definition",
+    "critical journeys",
+    "acceptance criteria",
+    "non-goals"
+  ],
+  "nextAgent": "ARCHITECTURE",
+  "requiredNextOutputs": [
+    "system architecture",
+    "service boundaries",
+    "data model",
+    "API contracts",
+    "provider adapter contract",
+    "workflow schema",
+    "deployment topology",
+    "security boundaries",
+    "MVP build slices"
+  ],
+  "gates": {
+    "productBrief": "PASS",
+    "requirements": "PASS",
+    "architecture": "PENDING",
+    "design": "PENDING",
+    "build": "PENDING",
+    "reviewSecurity": "PENDING",
+    "test": "PENDING",
+    "deploy": "PENDING",
+    "qc": "PENDING",
+    "owner": "PENDING"
+  }
+}
