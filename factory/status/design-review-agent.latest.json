@@ -1,0 +1,23 @@
+{
+  "workflow": "Design Review Agent",
+  "status": "DESIGN_REVISION_REQUIRED",
+  "score": 99,
+  "projectId": "10331346960531835750",
+  "summary": {
+    "expectedScreens": 8,
+    "generatedScreens": 8,
+    "passedScreens": 7,
+    "rtlScreens": 8,
+    "arabicScreens": 8,
+    "interactiveScreens": 8
+  },
+  "blockingIssues": [
+    "Potential exposed credential-like value detected in workspace-onboarding."
+  ],
+  "limitations": [
+    "v0.1 reviews generated HTML structure/content and does not yet perform pixel-level visual judgment.",
+    "A future visual reviewer should inspect rendered screenshots for spacing, hierarchy, clipping, contrast and cross-screen consistency."
+  ],
+  "runId": "35331667699",
+  "commitSha": "eaf960589726007c28a1276badf718172961a406"
+}
