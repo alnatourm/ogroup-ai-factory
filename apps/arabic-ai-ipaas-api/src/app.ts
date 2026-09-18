@@ -7,12 +7,16 @@ import type { ProviderRepository } from './postgres.js';
 import { decryptSecret, encryptSecret, redactProvider } from './security.js';
 import type { GatewayRequest, ProviderType, RequestContext, WorkspaceRole } from './types.js';
 
-declare global {
-  namespace Express {
-    interface Request {
-      factoryContext?: RequestContext;
-    }
-  }
+type FactoryRequest = Request & { factoryContext?: RequestContext };
+
+function setContext(req: Request, context: RequestContext): void {
+  (req as FactoryRequest).factoryContext = context;
+}
+
+function getContext(req: Request): RequestContext {
+  const context = (req as FactoryRequest).factoryContext;
+  if (!context) throw new Error('FACTORY_CONTEXT_MISSING');
+  return context;
 }
 
 const VALID_ROLES = new Set<WorkspaceRole>([
@@ -40,11 +44,11 @@ function buildContextMiddleware(
     if (auth?.startsWith('Bearer ') && apiKeyVerifier) {
       const verified = await apiKeyVerifier.verify(auth.slice('Bearer '.length).trim());
       if (verified) {
-        req.factoryContext = {
+        setContext(req, {
           workspaceId: verified.workspaceId,
           userId: verified.userId,
           role: verified.role,
-        };
+        });
         next();
         return;
       }
@@ -55,7 +59,7 @@ function buildContextMiddleware(
       const userId = req.header('x-user-id');
       const role = req.header('x-workspace-role') as WorkspaceRole | undefined;
       if (workspaceId && userId && role && VALID_ROLES.has(role)) {
-        req.factoryContext = { workspaceId, userId, role };
+        setContext(req, { workspaceId, userId, role });
         next();
         return;
       }
@@ -66,7 +70,7 @@ function buildContextMiddleware(
 }
 
 function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  const role = req.factoryContext?.role;
+  const role = getContext(req).role;
   if (!role || !['workspace_owner', 'workspace_admin', 'developer'].includes(role)) {
     res.status(403).json({ error: 'INSUFFICIENT_ROLE' });
     return;
@@ -104,7 +108,7 @@ export function createApp(options: {
 
   app.get('/v1/provider-connections', async (req, res, next) => {
     try {
-      const workspaceId = req.factoryContext!.workspaceId;
+      const workspaceId = getContext(req).workspaceId;
       res.json({ data: (await repository.list(workspaceId)).map(redactProvider) });
     } catch (error) {
       next(error);
@@ -113,7 +117,7 @@ export function createApp(options: {
 
   app.post('/v1/provider-connections', requireWriteRole, async (req, res, next) => {
     try {
-      const workspaceId = req.factoryContext!.workspaceId;
+      const workspaceId = getContext(req).workspaceId;
       const { providerType, name, apiKey, baseUrl, modelDefault, config } = req.body as {
         providerType?: ProviderType;
         name?: string;
@@ -146,7 +150,7 @@ export function createApp(options: {
 
   app.delete('/v1/provider-connections/:id', requireWriteRole, async (req, res, next) => {
     try {
-      const workspaceId = req.factoryContext!.workspaceId;
+      const workspaceId = getContext(req).workspaceId;
       if (!(await repository.remove(workspaceId, req.params.id))) {
         res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
         return;
@@ -159,7 +163,7 @@ export function createApp(options: {
 
   app.post('/v1/chat/completions', async (req, res, next) => {
     try {
-      const workspaceId = req.factoryContext!.workspaceId;
+      const workspaceId = getContext(req).workspaceId;
       const providers = (await repository.list(workspaceId)).filter((item) => item.status === 'active');
       const provider = providers[0];
       if (!provider) {
