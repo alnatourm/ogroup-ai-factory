@@ -110,13 +110,14 @@ export class AntigravityBuildAgent implements BuildAgent {
     }
 
     const status = this.toStatus(response.status);
+    const outputText = this.extractOutputText(response);
 
     return {
       provider: 'google-antigravity',
       interactionId: response.id,
       ...(response.environment_id ? { environmentId: response.environment_id } : {}),
       status,
-      ...(this.extractOutputText(response) ? { outputText: this.extractOutputText(response) } : {}),
+      ...(outputText ? { outputText } : {}),
     };
   }
 
