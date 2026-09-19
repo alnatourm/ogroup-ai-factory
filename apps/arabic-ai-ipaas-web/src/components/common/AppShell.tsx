@@ -25,7 +25,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
 
   const handleSaveSettings = () => {
     updateApiConfig({
-      workspaceId: runtimeWorkspaceId.trim() || 'workspace-a',
+      workspaceId: runtimeWorkspaceId.trim(),
       apiKey: runtimeApiKey.trim() || undefined,
       baseUrl: runtimeBaseUrl.trim() || '/api',
     });
@@ -56,7 +56,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
                   {t('brand.name')}
                 </span>
                 <span className="text-[10px] text-on-surface-variant block font-arabic leading-none">
-                  Wasl AI Sovereign iPaaS
+                  Wasl Arabic AI iPaaS
                 </span>
               </div>
             </button>
@@ -197,14 +197,14 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
       <footer className="bg-surface-container-lowest border-t border-outline-variant py-6 px-4 lg:px-8 mt-12">
         <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-on-surface-variant font-arabic">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-primary">منصة وصل للذكاء الاصطناعي السيادي</span>
+            <span className="font-bold text-primary">منصة وصل للذكاء الاصطناعي العربي</span>
             <span>•</span>
             <span>OGroup AI Factory v0.1</span>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
-            <span>التشفير السيادي: Hardware Security Module (FIPS 140-3)</span>
+            <span>حالة الحماية: تعتمد على إعدادات الخادم المتحقق منها</span>
             <span>•</span>
-            <span>حوكمة البيانات: Zero Data Retention Policy</span>
+            <span>سياسة البيانات: خاصة افتراضياً وتخضع لإعدادات المزود</span>
           </div>
         </div>
       </footer>
@@ -214,7 +214,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         title="إعدادات بيئة الاتصال والتوثيق (Runtime Configuration)"
-        description="تكوين معلمات الاتصال ببوابة التحكم السيادية ومفاتيح Bearer Auth دون تضمين أي أسرار في الكود المصدري."
+        description="تكوين عنوان واجهة التحكم ومفتاح الوصول دون تضمين أي سر في الكود المصدري."
         confirmText="تطبيق الإعدادات"
         cancelText="إلغاء"
         onConfirm={handleSaveSettings}
@@ -224,7 +224,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
             label="معرف مساحة العمل (Workspace ID)"
             value={runtimeWorkspaceId}
             onChange={(e) => setRuntimeWorkspaceId(e.target.value)}
-            helperText="كل استدعاء سيادي يقترن بهذا المعرف لضمان العزل التام بين المستأجرين."
+            helperText="يعرض معرّف مساحة العمل المرتبط بالمفتاح بعد التحقق من الخادم."
           />
           <Input
             label="عنوان نقطة النهاية (API Base URL)"
@@ -237,7 +237,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
             type="password"
             value={runtimeApiKey}
             onChange={(e) => setRuntimeApiKey(e.target.value)}
-            placeholder="أدخل مفتاح Bearer أو اتركه فارغاً لاستخدام ترويسات الاختبار الآمنة"
+            placeholder="أدخل مفتاح Bearer صالحاً؛ سيُرفض الاتصال بدونه"
             helperText="لا يُخزن المفتاح نهائياً في الكود أو ملفات الاختبار، بل يُمرر ديناميكياً في ترويسة Authorization."
           />
 
@@ -249,7 +249,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
           )}
 
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1 text-slate-600">
-            <span className="font-bold block text-slate-800">ضمانات الأمان السيادي:</span>
+            <span className="font-bold block text-slate-800">حدود الأمان الحالية:</span>
             <p>1. المفاتيح المدخلة لا تُسجل إطلاقاً في وحدة التخزين الدائم للمتصفح.</p>
             <p>2. يتم تمرير الاعتمادات عبر HTTPS فقط بموجب ضوابط الأمان الصارمة.</p>
           </div>
