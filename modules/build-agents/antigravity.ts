@@ -8,6 +8,13 @@ interface AntigravityResponse {
   environment_id?: string;
   status?: string;
   output_text?: string;
+  steps?: Array<{
+    type?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
+  }>;
 }
 
 export interface AntigravityBuildAgentOptions {
@@ -109,8 +116,25 @@ export class AntigravityBuildAgent implements BuildAgent {
       interactionId: response.id,
       ...(response.environment_id ? { environmentId: response.environment_id } : {}),
       status,
-      ...(response.output_text ? { outputText: response.output_text } : {}),
+      ...(this.extractOutputText(response) ? { outputText: this.extractOutputText(response) } : {}),
     };
+  }
+
+  private extractOutputText(response: AntigravityResponse): string | undefined {
+    if (response.output_text?.trim()) {
+      return response.output_text.trim();
+    }
+
+    const text = response.steps
+      ?.filter((step) => step.type === 'model_output')
+      .flatMap((step) => step.content ?? [])
+      .filter((item) => item.type === 'text' && typeof item.text === 'string')
+      .map((item) => item.text?.trim())
+      .filter((item): item is string => Boolean(item))
+      .join('\n')
+      .trim();
+
+    return text || undefined;
   }
 
   private toStatus(status?: string): BuildAgentStatus {
