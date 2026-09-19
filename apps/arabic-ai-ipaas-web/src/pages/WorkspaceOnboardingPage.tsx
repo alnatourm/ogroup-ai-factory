@@ -26,7 +26,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
 
   // Provider configuration state
   const [providerType, setProviderType] = useState<ProviderType>('openai-compatible');
-  const [providerName, setProviderName] = useState('Azure OpenAI السيادي المعتمد');
+  const [providerName, setProviderName] = useState('Azure OpenAI');
   const [baseUrl, setBaseUrl] = useState('https://wasl-sovereign-azure.openai.azure.com/v1');
   const [modelDefault, setModelDefault] = useState('gpt-4o');
   const [apiKey, setApiKey] = useState('');
@@ -105,7 +105,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
             {language === 'ar' ? 'تهيئة مساحة العمل السيادية v0.1' : 'Sovereign Onboarding v0.1'}
           </Badge>
           <Badge variant="success" size="md">
-            {language === 'ar' ? 'معتمد NDMO Level 4' : 'NDMO Level 4 Certified'}
+            {language === 'ar' ? 'ملف حوكمة تجريبي' : 'Demo Governance Profile'}
           </Badge>
         </div>
         <h1 className="text-2xl lg:text-3xl font-bold text-primary font-arabic tracking-tight">
@@ -113,7 +113,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
         </h1>
         <p className="text-sm text-on-surface-variant font-arabic max-w-3xl leading-relaxed">
           {language === 'ar'
-            ? 'قم بتهيئة مساحة العمل المؤسسية، واختيار سياسة الخصوصية وحوكمة البيانات المعتمدة، وربط مفتاح مزود الذكاء الاصطناعي الأول الخاص بمؤسستك (BYOAI) مع التشفير السيادي الكامل.'
+            ? 'قم بتهيئة مساحة العمل المؤسسية، واختيار سياسة الخصوصية وحوكمة البيانات، وربط مزود الذكاء الاصطناعي الأول الخاص بمؤسستك (BYOAI). خصائص التشفير والامتثال تعتمد على التحقق الفعلي من البنية الخلفية والمزود.'
             : 'Configure your enterprise sovereign workspace, select data governance tiers, and connect your initial BYOAI provider.'}
         </p>
       </div>
@@ -205,8 +205,8 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                   </h4>
                   <p className="text-xs text-on-surface-variant font-arabic leading-relaxed">
                     {language === 'ar'
-                      ? 'حظر تخزين البيانات. عدم استخدام المحتوى لأي أغراض تدريبية إطلاقاً (Zero Data Retention).'
-                      : 'Zero data retention for training. Complete tenant cryptographic isolation.'}
+                      ? 'اطلب سياسة عدم التدريب وعدم الاحتفاظ بالمحتوى، مع ضرورة التحقق من دعمها فعلياً لدى المزود والبنية الخلفية.'
+                      : 'Request no-training and zero-retention behavior. Enforcement must be verified against the configured provider and backend.'}
                   </p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-emerald-700 font-semibold flex items-center gap-1 font-arabic">
