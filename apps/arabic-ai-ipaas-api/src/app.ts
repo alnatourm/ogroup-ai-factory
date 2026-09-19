@@ -553,7 +553,7 @@ export function createApp(options: {
           outputTokens: completion.completionTokens,
           latencyMs: Date.now() - startedAt,
           status: 'succeeded',
-          safeMetadata: {},
+          safeMetadata: { model: completion.model },
         });
         res.json({
           id: `chatcmpl_${crypto.randomUUID()}`,
@@ -577,7 +577,7 @@ export function createApp(options: {
           latencyMs: Date.now() - startedAt,
           status: 'failed',
           errorCode: 'PROVIDER_REQUEST_FAILED',
-          safeMetadata: {},
+          safeMetadata: { model: input.model ?? provider.modelDefault ?? 'unknown' },
         });
         res.status(502).json({ error: 'PROVIDER_REQUEST_FAILED' });
       }
