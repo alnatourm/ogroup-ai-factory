@@ -196,14 +196,24 @@ function buildHeaders(config = getApiConfig()): Record<string, string> {
 
   if (config.apiKey) {
     headers['Authorization'] = `Bearer ${config.apiKey}`;
-  } else {
-    // Insecure test headers supported by backend seam for development/testing
+  } else if (config.allowDevIdentityHeaders) {
+    if (!config.workspaceId || !config.userId) {
+      throw new Error('Development identity headers require VITE_WORKSPACE_ID and VITE_USER_ID.');
+    }
     headers['x-workspace-id'] = config.workspaceId;
     headers['x-user-id'] = config.userId;
     headers['x-workspace-role'] = config.role;
+  } else {
+    throw new Error('Authentication is required. Configure a runtime API credential or explicitly enable development identity headers.');
   }
 
   return headers;
+}
+
+function requireMockFallback(): void {
+  if (!getApiConfig().useMockFallback) {
+    throw new Error('Backend capability is unavailable and mock fallback is disabled.');
+  }
 }
 
 export class ArabicAiIpaasClient {
@@ -221,9 +231,10 @@ export class ArabicAiIpaasClient {
         return await response.json();
       }
     } catch {
-      // Backend not running in live environment; return typed offline state
+      // Fall through to explicit mock gate.
     }
-    return { status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.2.0 (simulated)' };
+    requireMockFallback();
+    return { status: 'mock', service: 'arabic-ai-ipaas-control-api', version: '0.2.0-demo' };
   }
 
   /**
@@ -241,8 +252,9 @@ export class ArabicAiIpaasClient {
         return body.data;
       }
     } catch {
-      // Fallback to in-memory mock if offline
+      // Fall through to explicit mock gate.
     }
+    requireMockFallback();
     return [...mockProviders];
   }
 
@@ -264,10 +276,11 @@ export class ArabicAiIpaasClient {
         return body.data;
       }
     } catch {
-      // Fallback
+      // Fall through to explicit mock gate.
     }
 
-    // In-memory fallback: redact secret completely
+    requireMockFallback();
+    // In-memory demo fallback: redact secret completely
     const newProvider: SafeProviderConnection = {
       id: `conn_${Date.now()}`,
       workspaceId: config.workspaceId,
@@ -301,8 +314,9 @@ export class ArabicAiIpaasClient {
         return true;
       }
     } catch {
-      // Fallback
+      // Fall through to explicit mock gate.
     }
+    requireMockFallback();
     mockProviders = mockProviders.filter((p) => p.id !== providerId);
     return true;
   }
@@ -324,17 +338,18 @@ export class ArabicAiIpaasClient {
         return (await response.json()) as GatewayResponse;
       }
     } catch {
-      // Fallback to high-quality Arabic simulated response when provider not connected
+      // Fall through to explicit mock gate.
     }
 
-    // Simulated OpenAI-compatible response for Arabic Gateway Playground
+    requireMockFallback();
+    // Simulated OpenAI-compatible demo response for Arabic Gateway Playground
     const userMessage = [...request.messages].reverse().find((m) => m.role === 'user')?.content || 'مرحباً';
     const completionText = `تمت معالجة الطلب بنجاح عبر بوابة «وصل» للذكاء الاصطناعي السيادي.\n\n` +
       `تحليل الاستعلام العربي:\n` +
       `• تم التحقق من النص والحفاظ على سياق الأعمال باللغة العربية.\n` +
-      `• الكيانات والبيانات الحساسة: محجوبة وفق معايير الهيئة الوطنية للأمن السيبراني.\n` +
+      `• وضع العرض التجريبي: لا توجد مطالبة امتثال أو معالجة فعلية للبيانات الحساسة في هذه الاستجابة.\n` +
       `• الملخص التنفيذي للاستعلام: "${userMessage.slice(0, 80)}${userMessage.length > 80 ? '...' : ''}"\n\n` +
-      `تم توجيه الاستجابة بأمان دون تخزين المحتوى الخاص في مخازن النماذج العامة.`;
+      `هذه استجابة تجريبية محلية ولا تمثل إثباتاً على التخزين أو عدم التخزين لدى أي مزود.`;
 
     const promptTokens = Math.max(12, Math.floor(userMessage.length / 2.5));
     const completionTokens = Math.max(25, Math.floor(completionText.length / 2.8));
@@ -373,6 +388,7 @@ export class ArabicAiIpaasClient {
    * Compile Arabic natural language workflow instruction into structured steps.
    */
   static async compileWorkflowPrompt(instructionAr: string): Promise<WorkflowDefinition> {
+    requireMockFallback();
     // Artificial slight delay to give realistic compiler feedback
     await new Promise((resolve) => setTimeout(resolve, 350));
 
@@ -460,6 +476,7 @@ export class ArabicAiIpaasClient {
    * List workflow run histories
    */
   static async listWorkflowRuns(): Promise<WorkflowRun[]> {
+    requireMockFallback();
     return [...mockWorkflowRuns];
   }
 
@@ -468,6 +485,7 @@ export class ArabicAiIpaasClient {
    * Document Intelligence OCR & entity extraction
    */
   static async processDocument(file: { name: string; size: number; type: string }): Promise<DocumentExtractionResult> {
+    requireMockFallback();
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     return {
@@ -524,6 +542,7 @@ export class ArabicAiIpaasClient {
    * Get Usage & SLA Metrics
    */
   static async getUsageSummary(): Promise<{ summary: UsageSummary; providers: ProviderMetric[] }> {
+    requireMockFallback();
     return {
       summary: {
         totalRequests: 248920,
@@ -577,6 +596,7 @@ export class ArabicAiIpaasClient {
    * Get Data Policy Configuration
    */
   static async getDataPolicy(): Promise<DataPolicyConfig> {
+    requireMockFallback();
     return { ...mockDataPolicy };
   }
 
@@ -585,6 +605,7 @@ export class ArabicAiIpaasClient {
    * Update Data Policy Configuration
    */
   static async updateDataPolicy(updates: Partial<DataPolicyConfig>): Promise<DataPolicyConfig> {
+    requireMockFallback();
     mockDataPolicy = {
       ...mockDataPolicy,
       ...updates,
