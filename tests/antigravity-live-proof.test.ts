@@ -5,36 +5,27 @@ const apiKey = process.env.ANTIGRAVITY_API_KEY;
 const live = apiKey ? describe : describe.skip;
 
 live('Antigravity controlled live proof', () => {
-  it('starts and retrieves a real background interaction', async () => {
+  it('executes a real Antigravity task end-to-end', async () => {
     const agent = new AntigravityBuildAgent({ apiKey: apiKey! });
 
-    const started = await agent.start({
+    const result = await agent.start({
       taskId: 'antigravity-live-proof',
       productId: 'ogroup-ai-factory',
-      instructions: 'Create a file named proof.txt containing exactly: ANTIGRAVITY_CONNECTED',
+      instructions: 'Create a file named proof.txt containing exactly: ANTIGRAVITY_CONNECTED. Then reply with exactly ANTIGRAVITY_CONNECTED.',
       maxTotalTokens: 5000,
+      executionMode: 'foreground',
     });
 
-    expect(started.interactionId.length).toBeGreaterThan(0);
-
-    let current = started;
-    const deadline = Date.now() + 180_000;
-
-    while (current.status === 'queued' || current.status === 'in_progress') {
-      if (Date.now() > deadline) {
-        throw new Error('ANTIGRAVITY_LIVE_PROOF_TIMEOUT');
-      }
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      current = await agent.get(started.interactionId);
-    }
-
-    expect(current.status).toBe('completed');
+    expect(result.interactionId.length).toBeGreaterThan(0);
+    expect(result.status).toBe('completed');
+    expect(result.outputText?.trim()).toContain('ANTIGRAVITY_CONNECTED');
 
     console.log(JSON.stringify({
       proof: 'ANTIGRAVITY_LIVE_PASS',
-      interactionId: current.interactionId,
-      status: current.status,
-      environmentIdPresent: Boolean(current.environmentId),
+      interactionIdPresent: Boolean(result.interactionId),
+      status: result.status,
+      environmentIdPresent: Boolean(result.environmentId),
+      outputVerified: result.outputText?.includes('ANTIGRAVITY_CONNECTED') ?? false,
     }));
   }, 210_000);
 });
