@@ -48,6 +48,12 @@ function getContext(req: Request): RequestContext {
   return context;
 }
 
+function getPathId(req: Request): string {
+  const id = req.params.id;
+  if (typeof id !== 'string') throw new Error('INVALID_PATH_PARAMETER');
+  return id;
+}
+
 const VALID_ROLES = new Set<WorkspaceRole>([
   'workspace_owner',
   'workspace_admin',
@@ -314,7 +320,7 @@ export function createApp(options: {
         res.status(400).json({ error: 'INVALID_WORKFLOW_STATUS' });
         return;
       }
-      const workflow = await workflowRepository.update(context.workspaceId, req.params.id, {
+      const workflow = await workflowRepository.update(context.workspaceId, getPathId(req), {
         ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
         ...(typeof body.description === 'string' ? { description: body.description } : {}),
         ...(body.definition !== undefined ? { definition: validateWorkflowDefinition(body.definition) } : {}),
@@ -342,7 +348,7 @@ export function createApp(options: {
   app.post('/v1/workflows/:id/runs', requireWorkflowWriteRole, async (req, res, next) => {
     try {
       const context = getContext(req);
-      const workflow = await workflowRepository.get(context.workspaceId, req.params.id);
+      const workflow = await workflowRepository.get(context.workspaceId, getPathId(req));
       if (!workflow) {
         res.status(404).json({ error: 'WORKFLOW_NOT_FOUND' });
         return;
@@ -474,18 +480,19 @@ export function createApp(options: {
   app.post('/v1/documents/:id/extractions', requireWorkflowWriteRole, async (req, res, next) => {
     try {
       const context = getContext(req);
-      if (!(await documentRepository.get(context.workspaceId, req.params.id))) {
+      const documentId = getPathId(req);
+      if (!(await documentRepository.get(context.workspaceId, documentId))) {
         res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
         return;
       }
-      const queued = await queueDocumentExtraction(context.workspaceId, req.params.id, documentRepository);
+      const queued = await queueDocumentExtraction(context.workspaceId, documentId, documentRepository);
       await auditRepository.record({
         workspaceId: context.workspaceId,
         actorUserId: context.userId,
         actorType: 'user',
         action: 'document.extraction_requested',
         entityType: 'document',
-        entityId: req.params.id,
+        entityId: documentId,
         metadata: { workerConfigured: queued.configured },
       });
       res.status(202).json({
