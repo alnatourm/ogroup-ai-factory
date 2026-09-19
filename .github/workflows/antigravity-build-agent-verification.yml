@@ -1,0 +1,39 @@
+name: Antigravity Build Agent Verification
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'modules/build-agents/**'
+      - 'tests/antigravity-build-agent.test.ts'
+      - 'factory/BUILD_AGENT_CONTRACT_V0.1.md'
+      - '.github/workflows/antigravity-build-agent-verification.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify-build-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build-agent unit tests
+        run: npm test -- --run tests/antigravity-build-agent.test.ts
