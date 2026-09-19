@@ -135,6 +135,7 @@ describe('Arabic AI iPaaS control API v0.2', () => {
     expect(response.body.choices[0].message.content).toBe('أهلاً بك');
     expect(response.body.usage.total_tokens).toBe(10);
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe('https://provider.example/chat/completions');
   });
 
   it('rejects insecure provider URLs in production adapter', async () => {
@@ -153,5 +154,37 @@ describe('Arabic AI iPaaS control API v0.2', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }, 'secret')).rejects.toThrow('PROVIDER_BASE_URL_MUST_USE_HTTPS');
+  });
+});
+
+
+describe('OpenAI-compatible base URL composition', () => {
+  it('preserves provider path prefixes such as Groq /openai/v1', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      expect(String(url)).toBe('https://api.groq.com/openai/v1/chat/completions');
+      return new Response(JSON.stringify({
+        model: 'openai/gpt-oss-20b',
+        choices: [{ message: { content: 'تم' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const adapter = new OpenAICompatibleProviderAdapter(fetchMock as typeof fetch);
+    await adapter.complete(
+      { model: 'openai/gpt-oss-20b', messages: [{ role: 'user', content: 'اختبار' }] },
+      {
+        id: 'groq',
+        workspaceId: 'w1',
+        providerType: 'openai-compatible',
+        name: 'Groq',
+        baseUrl: 'https://api.groq.com/openai/v1',
+        modelDefault: 'openai/gpt-oss-20b',
+        secretCiphertext: 'encrypted',
+        config: {},
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      'secret',
+    );
   });
 });
