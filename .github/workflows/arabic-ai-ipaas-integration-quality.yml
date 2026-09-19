@@ -36,6 +36,9 @@ jobs:
       - name: Backend typecheck
         run: npm run typecheck
 
+      - name: Backend production build
+        run: npm run build
+
       - name: Backend tests
         run: npm test
 
