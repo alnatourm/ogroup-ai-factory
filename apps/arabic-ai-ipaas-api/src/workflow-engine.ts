@@ -217,108 +217,74 @@ function executeDeterministicStep(
       return {
         output: {
           receivedAt: new Date().toISOString(),
-          source: (step.config?.protocol as string) || 'HTTPS Webhook',
+          source: (step.config?.protocol as string) || 'manual',
           payloadKeys: Object.keys(input),
         },
         status: 'succeeded',
       };
 
-    case 'pii_masking':
+    case 'pii_masking': {
+      const sensitiveKeys = new Set(['national_id', 'nationalId', 'bank_account', 'bankAccount', 'iban', 'phone']);
+      const output: Record<string, unknown> = {};
+      let maskedCount = 0;
+      for (const [key, value] of Object.entries(input)) {
+        if (sensitiveKeys.has(key) && value !== undefined && value !== null) {
+          output[key] = '[REDACTED]';
+          maskedCount++;
+        } else {
+          output[key] = value;
+        }
+      }
       return {
-        output: {
-          maskedCount: 2,
-          maskedFields: ['national_id', 'bank_account'],
-          policy: (step.config?.policy as string) || 'NDMO-L4',
-          sanitized: true,
-        },
+        output: { ...output, maskedCount },
         status: 'succeeded',
       };
+    }
 
     case 'condition': {
-      const threshold = Number(step.config?.threshold ?? step.config?.value ?? 10000);
-      const amount = Number(input.amount ?? 15000);
+      const threshold = Number(step.config?.threshold ?? step.config?.value);
+      const amount = Number(input.amount);
       const operator = (step.config?.operator as string) || '>';
-      let conditionMet = false;
+      if (!Number.isFinite(threshold) || !Number.isFinite(amount)) {
+        return {
+          output: {},
+          status: 'failed',
+          error: 'CONDITION_INPUT_REQUIRED',
+        };
+      }
+      let conditionMet: boolean;
       if (operator === '>') conditionMet = amount > threshold;
       else if (operator === '>=') conditionMet = amount >= threshold;
       else if (operator === '<') conditionMet = amount < threshold;
+      else if (operator === '<=') conditionMet = amount <= threshold;
       else if (operator === '==') conditionMet = amount === threshold;
-      else conditionMet = true;
-
+      else {
+        return { output: {}, status: 'failed', error: 'UNSUPPORTED_CONDITION_OPERATOR' };
+      }
       return {
-        output: {
-          conditionMet,
-          operator,
-          evaluatedValue: amount,
-          threshold,
-          branch: conditionMet ? 'threshold_exceeded' : 'standard',
-        },
+        output: { conditionMet, operator, evaluatedValue: amount, threshold },
         status: 'succeeded',
       };
     }
 
     case 'manager_approval':
-      return {
-        output: {
-          channel: (step.config?.channel as string) || 'Teams/Email',
-          approvalStatus: 'pending_review',
-          approverRole: (step.config?.approverRole as string) || 'financial_director',
-          dispatchTimestamp: new Date().toISOString(),
-        },
-        status: 'succeeded',
-      };
-
     case 'notification':
-      return {
-        output: {
-          channel: (step.config?.channel as string) || 'Email',
-          recipient: (step.config?.recipient as string) || 'cfo@org.gov.sa',
-          dispatched: true,
-        },
-        status: 'succeeded',
-      };
-
     case 'archive':
-      return {
-        output: {
-          archiveId: `ARCH-${Date.now()}`,
-          storageClass: (step.config?.storageClass as string) || 'Sovereign-WORM',
-          retentionYears: Number(step.config?.retentionYears ?? 10),
-          immutable: true,
-        },
-        status: 'succeeded',
-      };
-
     case 'ai.extract':
     case 'llm_transform':
     case 'transform':
-      return {
-        output: {
-          extractedFields: {
-            amount: input.amount ?? 15000,
-            currency: (input.currency as string) ?? 'SAR',
-            supplier: (input.supplier as string) ?? 'الشركة الوطنية للحلول السحابية',
-          },
-          status: 'compliant',
-          confidence: 0.99,
-        },
-        status: 'succeeded',
-      };
-
     case 'http.request':
       return {
-        output: {
-          statusCode: 200,
-          delivered: true,
-          connection: (step.config?.connection as string) || 'internal_bus',
-        },
-        status: 'succeeded',
+        output: { configured: false, stepType },
+        status: 'failed',
+        error: 'STEP_EXECUTOR_NOT_CONFIGURED',
       };
 
     default:
       return {
-        output: { executed: true, stepType },
-        status: 'succeeded',
+        output: { configured: false, stepType },
+        status: 'failed',
+        error: 'UNSUPPORTED_STEP_TYPE',
       };
   }
 }
