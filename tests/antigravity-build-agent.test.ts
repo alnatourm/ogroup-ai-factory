@@ -2,27 +2,27 @@ import { describe, expect, it, vi } from 'vitest';
 import { AntigravityBuildAgent } from '../modules/build-agents/antigravity.js';
 
 describe('AntigravityBuildAgent', () => {
-  it('starts a governed background build through the official Google GenAI interactions client', async () => {
-    const create = vi.fn(async (input: Record<string, unknown>) => {
-      expect(input.agent).toBe('antigravity-preview-09-2026');
-      expect(input.background).toBe(true);
-      expect(input.agent_config).toEqual({
+  it('starts a governed background build without exposing the API key in the body', async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(JSON.stringify(body)).not.toContain('test-secret');
+      expect(body.agent).toBe('antigravity-preview-09-2026');
+      expect(body.background).toBe(true);
+      expect(body.agent_config).toEqual({
         type: 'antigravity',
         max_total_tokens: 50000,
       });
 
-      return {
+      return new Response(JSON.stringify({
         id: 'interaction-1',
         environment_id: 'environment-1',
         status: 'in_progress',
-      };
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
-
-    const get = vi.fn();
 
     const agent = new AntigravityBuildAgent({
       apiKey: 'test-secret',
-      client: { create, get },
+      fetchImpl: fetchMock as typeof fetch,
     });
 
     const result = await agent.start({
@@ -37,24 +37,35 @@ describe('AntigravityBuildAgent', () => {
       environmentId: 'environment-1',
       status: 'in_progress',
     });
-    expect(create).toHaveBeenCalledOnce();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://generativelanguage.googleapis.com/v1beta/interactions',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-goog-api-key': 'test-secret',
+          'Api-Revision': '2026-05-20',
+        }),
+      }),
+    );
   });
 
-  it('polls a build interaction to completion', async () => {
-    const create = vi.fn();
-    const get = vi.fn(async (interactionId: string) => {
-      expect(interactionId).toBe('interaction-2');
-      return {
+  it('polls the documented v1beta interaction URL without Api-Revision header', async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      expect(String(url)).toBe('https://generativelanguage.googleapis.com/v1beta/interactions/interaction-2');
+      expect(init?.headers).toEqual({ 'x-goog-api-key': 'test-secret' });
+
+      return new Response(JSON.stringify({
         id: 'interaction-2',
         environment_id: 'environment-2',
         status: 'completed',
         output_text: 'Build finished',
-      };
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
 
     const agent = new AntigravityBuildAgent({
       apiKey: 'test-secret',
-      client: { create, get },
+      fetchImpl: fetchMock as typeof fetch,
     });
 
     const result = await agent.get('interaction-2');
