@@ -625,41 +625,35 @@ export class PostgresDataPolicyRepository implements DataPolicyRepository {
   constructor(private readonly pool: Pool) {}
 
   async get(workspaceId: string): Promise<DataPolicyConfig> {
-    try {
-      const result = await this.pool.query<{
-        workspace_id: string;
-        data_zone: DataPolicyConfig['dataZone'];
-        pii_masking_enabled: boolean;
-        retention_days: number;
-        audit_logging_enabled: boolean;
-        strict_zdr_level: number;
-        dual_admin_approval_required: boolean;
-        opt_in_confirmed: boolean;
-        rights_basis: string | null;
-        updated_at: Date;
-      }>(
-        'select * from workspace_data_policies where workspace_id = $1 limit 1',
-        [workspaceId],
-      );
-      const row = result.rows[0];
-      if (row) {
-        return {
-          workspaceId: row.workspace_id,
-          dataZone: row.data_zone,
-          piiMaskingEnabled: row.pii_masking_enabled,
-          retentionDays: row.retention_days,
-          auditLoggingEnabled: row.audit_logging_enabled,
-          strictZdrLevel: row.strict_zdr_level,
-          dualAdminApprovalRequired: row.dual_admin_approval_required,
-          optInConfirmed: row.opt_in_confirmed,
-          rightsBasis: row.rights_basis ?? undefined,
-          updatedAt: row.updated_at.toISOString(),
-        };
-      }
-    } catch {
-      // If table does not exist or empty, return default
-    }
-    return getDefaultDataPolicy(workspaceId);
+    const result = await this.pool.query<{
+      workspace_id: string;
+      data_zone: DataPolicyConfig['dataZone'];
+      pii_masking_enabled: boolean;
+      retention_days: number;
+      audit_logging_enabled: boolean;
+      strict_zdr_level: number;
+      dual_admin_approval_required: boolean;
+      opt_in_confirmed: boolean;
+      rights_basis: string | null;
+      updated_at: Date;
+    }>(
+      'select * from workspace_data_policies where workspace_id = $1 limit 1',
+      [workspaceId],
+    );
+    const row = result.rows[0];
+    if (!row) return getDefaultDataPolicy(workspaceId);
+    return {
+      workspaceId: row.workspace_id,
+      dataZone: row.data_zone,
+      piiMaskingEnabled: row.pii_masking_enabled,
+      retentionDays: row.retention_days,
+      auditLoggingEnabled: row.audit_logging_enabled,
+      strictZdrLevel: row.strict_zdr_level,
+      dualAdminApprovalRequired: row.dual_admin_approval_required,
+      optInConfirmed: row.opt_in_confirmed,
+      rightsBasis: row.rights_basis ?? undefined,
+      updatedAt: row.updated_at.toISOString(),
+    };
   }
 
   async update(workspaceId: string, updates: Partial<DataPolicyConfig>): Promise<DataPolicyConfig> {
@@ -671,9 +665,8 @@ export class PostgresDataPolicyRepository implements DataPolicyRepository {
       updatedAt: new Date().toISOString(),
     };
 
-    try {
-      await this.pool.query(
-        `insert into workspace_data_policies (
+    await this.pool.query(
+      `insert into workspace_data_policies (
            workspace_id, data_zone, pii_masking_enabled, retention_days,
            audit_logging_enabled, strict_zdr_level, dual_admin_approval_required,
            opt_in_confirmed, rights_basis, updated_at
@@ -698,11 +691,8 @@ export class PostgresDataPolicyRepository implements DataPolicyRepository {
           updated.dualAdminApprovalRequired,
           updated.optInConfirmed,
           updated.rightsBasis ?? null,
-        ],
-      );
-    } catch {
-      // Table may not exist in minimal environments
-    }
+      ],
+    );
 
     return updated;
   }
@@ -968,7 +958,7 @@ export class PostgresTraceRepository implements TraceRepository {
         trace.latencyMs ?? 0,
         trace.status,
         trace.errorCode ?? null,
-        trace.safeMetadata ?? {},
+        { ...(trace.safeMetadata ?? {}), model: trace.model },
       ],
     );
     const row = result.rows[0]!;
