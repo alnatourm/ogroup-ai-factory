@@ -1,0 +1,44 @@
+name: Antigravity Live Proof
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'modules/build-agents/antigravity.ts'
+      - 'tests/antigravity-live-proof.test.ts'
+      - '.github/workflows/antigravity-live-proof.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  antigravity-live-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      ANTIGRAVITY_API_KEY: ${{ secrets.OGROUP_ANTIGRAVITY_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Require Google API key
+        shell: bash
+        run: |
+          if [ -z "$ANTIGRAVITY_API_KEY" ]; then
+            echo "::error::OGROUP_ANTIGRAVITY_API_KEY is not configured."
+            exit 20
+          fi
+
+      - name: Run controlled Antigravity live proof
+        run: npm test -- --run tests/antigravity-live-proof.test.ts
