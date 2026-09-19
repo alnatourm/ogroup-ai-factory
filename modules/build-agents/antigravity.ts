@@ -64,6 +64,7 @@ export class AntigravityBuildAgent implements BuildAgent {
       headers: {
         'content-type': 'application/json',
         'x-goog-api-key': this.apiKey,
+        'Api-Revision': '2026-05-20',
       },
       body: JSON.stringify(body),
     });
@@ -85,6 +86,7 @@ export class AntigravityBuildAgent implements BuildAgent {
       {
         headers: {
           'x-goog-api-key': this.apiKey,
+          'Api-Revision': '2026-05-20',
         },
       },
     );
