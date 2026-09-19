@@ -12,70 +12,19 @@ import { Select } from '../components/common/Select.js';
 export const WorkflowBuilderPage: React.FC = () => {
   const { language, t } = useI18n();
 
-  const [promptInput, setPromptInput] = useState(
-    'إذا وصل عرض سعر من المورد وكان المبلغ فوق 10000 ريال أرسله للمدير المالي للموافقة، وافحص السجل التجاري.'
-  );
+  const [promptInput, setPromptInput] = useState('');
 
   const [isCompiling, setIsCompiling] = useState(false);
 
-  // Workflow State (Interactive!)
   const [workflow, setWorkflow] = useState<WorkflowDefinition>({
-    id: 'wf_initial_demo',
-    workspaceId: 'workspace-a',
-    nameAr: 'مسار معالجة عروض الأسعار والتحقق المالي السيادي',
-    nameEn: 'Automated Sovereign Quote Processing Workflow',
-    promptInstructionAr:
-      'إذا وصل عرض سعر من المورد وكان المبلغ فوق 10000 ريال أرسله للمدير المالي للموافقة، وافحص السجل التجاري.',
+    id: 'local-draft',
+    workspaceId: '',
+    nameAr: 'مسار جديد',
+    nameEn: 'New workflow',
+    promptInstructionAr: '',
     status: 'draft',
-    steps: [
-      {
-        id: 'step_trigger_01',
-        titleAr: 'مشغّل المسار: استقبال المعاملة / عرض السعر',
-        titleEn: 'Trigger: Receive Quote / Transaction',
-        stepType: 'trigger',
-        descriptionAr: 'استقبال حدث ويبهوك مشفر من منصة اعتماد أو نظام إدارة المشتريات المؤسسي',
-        descriptionEn: 'Receive encrypted inbound webhook from procurement or ERP system',
-        config: { protocol: 'HTTPS Webhook', auth: 'Mutual TLS' },
-        status: 'configured',
-      },
-      {
-        id: 'step_pii_02',
-        titleAr: 'حجب الكيانات الحساسة وفحص الخصوصية',
-        titleEn: 'Entity Masking & Privacy Check',
-        stepType: 'pii_masking',
-        descriptionAr: 'حجب الهويات الوطنية، الحسابات المصرفية، والأرقام السرية وفق ضوابط NDMO',
-        descriptionEn: 'Mask national IDs, IBANs, and PII in accordance with NDMO guidelines',
-        config: { policy: 'NDMO-L4', maskFormat: '[محجوب-سيادي]' },
-        status: 'configured',
-      },
-      {
-        id: 'step_cond_03',
-        titleAr: 'شرط القيمة المالية (> 10,000 ريال سعودي)',
-        titleEn: 'Condition: Amount > 10,000 SAR',
-        stepType: 'condition',
-        descriptionAr: 'المسار يتفرع لطلب موافقة الإدارة المالية والامتثال نظراً لتجاوز الحد المعتمد',
-        descriptionEn: 'Branch path to request finance approval because amount exceeds threshold',
-        config: { operator: '>', threshold: 10000, currency: 'SAR' },
-        status: 'configured',
-      },
-      {
-        id: 'step_approval_04',
-        titleAr: 'طلب موافقة المدير المالي المعتمد',
-        titleEn: 'Action: Request Manager Approval',
-        stepType: 'manager_approval',
-        descriptionAr: 'إرسال إشعار تفاعلي عبر تطبيق المراسلة المؤسسي / البريد المشفر مع زر الموافقة',
-        descriptionEn: 'Dispatch approval request via enterprise Teams / Email with audit token',
-        config: { channel: 'Teams/Email', timeoutHours: 24 },
-        status: 'configured',
-      },
-    ],
-    rawJsonV1: {
-      version: 'workflow-json-v1',
-      trigger: { type: 'webhook.inbound', schema: 'quote_received' },
-      condition: { field: 'quote.amount', operator: '>', value: 10000, currency: 'SAR' },
-      action: { type: 'request_manager_approval', approverRole: 'financial_director' },
-      output: { archive: true, vault: 'sovereign-vault-ksa' },
-    },
+    steps: [],
+    rawJsonV1: { version: 'workflow-json-v1', steps: [] },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -112,7 +61,7 @@ export const WorkflowBuilderPage: React.FC = () => {
       titleEn: newStepTitle.trim(),
       stepType: newStepType,
       descriptionAr: newStepDesc.trim() || 'إجراء مخصص ضمن مسار العمل الذكي',
-      descriptionEn: newStepDesc.trim() || 'Custom step in sovereign workflow',
+      descriptionEn: newStepDesc.trim() || 'Custom step in local workflow draft',
       config: { custom: true },
       status: 'configured',
     };
