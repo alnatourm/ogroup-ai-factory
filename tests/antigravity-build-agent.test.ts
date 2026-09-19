@@ -79,3 +79,32 @@ describe('AntigravityBuildAgent', () => {
       .toThrow('ANTIGRAVITY_API_KEY_REQUIRED');
   });
 });
+
+
+it('can run a foreground governed build without polling', async () => {
+  const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.background).toBe(false);
+    return new Response(JSON.stringify({
+      id: 'interaction-foreground',
+      environment_id: 'environment-foreground',
+      status: 'completed',
+      output_text: 'ANTIGRAVITY_CONNECTED',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+
+  const agent = new AntigravityBuildAgent({
+    apiKey: 'test-secret',
+    fetchImpl: fetchMock as typeof fetch,
+  });
+
+  const result = await agent.start({
+    taskId: 'foreground-001',
+    productId: 'factory',
+    instructions: 'Run proof.',
+    executionMode: 'foreground',
+  });
+
+  expect(result.status).toBe('completed');
+  expect(result.outputText).toBe('ANTIGRAVITY_CONNECTED');
+});
