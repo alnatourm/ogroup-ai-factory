@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run src/integration-review.test.ts --config false",
+    "test": "vitest run --config vitest.config.ts",
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict --skipLibCheck src/*.ts"
   },
   "dependencies": {
