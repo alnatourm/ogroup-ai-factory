@@ -1,0 +1,236 @@
+name: Arabic AI iPaaS Frontend Build
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'factory/tasks/arabic-ai-ipaas-frontend-v0.1.md'
+      - '.github/workflows/arabic-ai-ipaas-frontend-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  antigravity-frontend-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANTIGRAVITY_API_KEY: ${{ secrets.OGROUP_ANTIGRAVITY_API_KEY }}
+      PRODUCT_BASE_BRANCH: product/arabic-ai-ipaas-database-v0.1
+      BUILD_TARGET: apps/arabic-ai-ipaas-web
+
+    steps:
+      - name: Checkout Factory
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require Antigravity key
+        shell: bash
+        run: |
+          if [ -z "$ANTIGRAVITY_API_KEY" ]; then
+            echo "::error::OGROUP_ANTIGRAVITY_API_KEY is not configured."
+            exit 20
+          fi
+
+      - name: Build frontend with Antigravity
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          REQUEST_JSON="$(jq -n --rawfile prompt factory/tasks/arabic-ai-ipaas-frontend-v0.1.md '{
+            agent: "antigravity-preview-09-2026",
+            input: $prompt,
+            environment: {
+              type: "remote",
+              sources: [
+                {
+                  type: "repository",
+                  source: "https://github.com/alnatourm/ogroup-ai-factory",
+                  target: "/workspace/ogroup-ai-factory"
+                }
+              ]
+            },
+            agent_config: {
+              type: "antigravity",
+              max_total_tokens: 120000
+            },
+            store: true
+          }')"
+
+          curl --fail-with-body -sS --max-time 1500             -X POST "https://generativelanguage.googleapis.com/v1beta/interactions"             -H "Content-Type: application/json"             -H "x-goog-api-key: $ANTIGRAVITY_API_KEY"             -H "Api-Revision: 2026-05-20"             -d "$REQUEST_JSON"             -o /tmp/antigravity-response.json
+
+          STATUS="$(jq -r '.status // "unknown"' /tmp/antigravity-response.json)"
+          INTERACTION_ID="$(jq -r '.id // empty' /tmp/antigravity-response.json)"
+          ENVIRONMENT_ID="$(jq -r '.environment_id // empty' /tmp/antigravity-response.json)"
+
+          echo "Antigravity status: $STATUS"
+          echo "interaction_id=$INTERACTION_ID" >> "$GITHUB_OUTPUT"
+          echo "environment_id=$ENVIRONMENT_ID" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$ENVIRONMENT_ID" ]; then
+            echo "::error::Antigravity did not return an environment_id."
+            jq '{status, error}' /tmp/antigravity-response.json
+            exit 30
+          fi
+
+          PASS=1
+          while [ "$STATUS" = "incomplete" ] && [ "$PASS" -le 2 ]; do
+            echo "::warning::Antigravity pass $PASS hit its token budget. Continuing in the same sandbox."
+
+            case "$PASS" in
+              1)
+                NEXT_TASK="Continue from the existing Arabic AI iPaaS frontend sandbox. Finish the app shell, routing, workspace onboarding, provider connections, and gateway playground. Do not restart. Run focused checks for the work completed."
+                BUDGET=70000
+                ;;
+              2)
+                NEXT_TASK="Continue from the existing sandbox. Finish workflow builder, workflow runs, document intelligence, usage dashboard, and data policy. Do not redesign completed screens. Run focused checks."
+                BUDGET=70000
+                ;;
+              *)
+                NEXT_TASK="Final verification pass. Finish any remaining small frontend pieces, run npm run typecheck, npm run lint, npm test, and npm run build inside apps/arabic-ai-ipaas-web. Repair concrete failures only. Ensure BUILD_REPORT.md exists and end with FRONTEND_BUILD_COMPLETED."
+                BUDGET=50000
+                ;;
+            esac
+
+            CONTINUE_JSON="$(jq -n \
+              --arg environment "$ENVIRONMENT_ID" \
+              --arg task "$NEXT_TASK" \
+              --argjson budget "$BUDGET" \
+              '{
+                agent: "antigravity-preview-09-2026",
+                environment: $environment,
+                input: $task,
+                agent_config: {
+                  type: "antigravity",
+                  max_total_tokens: $budget
+                },
+                store: true
+              }')"
+
+            HTTP_CODE="$(curl -sS --max-time 1200 \
+              -o "/tmp/antigravity-response-pass-$PASS.json" \
+              -w "%{http_code}" \
+              -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: $ANTIGRAVITY_API_KEY" \
+              -H "Api-Revision: 2026-05-20" \
+              -d "$CONTINUE_JSON")"
+
+            if [ "$HTTP_CODE" = "429" ]; then
+              echo "::warning::Antigravity rate limit reached during pass $PASS. Preserving the current sandbox as PARTIAL_READY."
+              STATUS="incomplete"
+              break
+            fi
+
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "::error::Antigravity continuation request failed with HTTP $HTTP_CODE."
+              jq '{error, status}' "/tmp/antigravity-response-pass-$PASS.json" 2>/dev/null || true
+              exit 32
+            fi
+
+            STATUS="$(jq -r '.status // "unknown"' "/tmp/antigravity-response-pass-$PASS.json")"
+            echo "Antigravity pass $PASS status: $STATUS"
+            PASS=$((PASS + 1))
+          done
+
+          if [ "$STATUS" = "completed" ]; then
+            echo "build_status=READY_FOR_REVIEW" >> "$GITHUB_OUTPUT"
+          elif [ "$STATUS" = "incomplete" ]; then
+            echo "::warning::Antigravity reached its governed budget. Salvaging the current sandbox as PARTIAL_READY instead of discarding work."
+            echo "build_status=PARTIAL_READY" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Antigravity build ended in non-recoverable status: $STATUS"
+            exit 31
+          fi
+
+      - name: Download Antigravity sandbox result
+        shell: bash
+        run: |
+          set -euo pipefail
+          ENVIRONMENT_ID="${{ steps.build.outputs.environment_id }}"
+
+          mkdir -p /tmp/antigravity-snapshot
+
+          HTTP_CODE="$(curl -L -sS --max-time 300 \
+            -o /tmp/antigravity-snapshot.tar \
+            -w "%{http_code}" \
+            "https://generativelanguage.googleapis.com/v1beta/environments/$ENVIRONMENT_ID/files?alt=media" \
+            -H "x-goog-api-key: $ANTIGRAVITY_API_KEY")"
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "::warning::Current environment-files endpoint returned 404. Trying Google's legacy snapshot endpoint as a compatibility fallback."
+            HTTP_CODE="$(curl -L -sS --max-time 300 \
+              -o /tmp/antigravity-snapshot.tar \
+              -w "%{http_code}" \
+              "https://generativelanguage.googleapis.com/v1beta/files/environment-$ENVIRONMENT_ID:download?alt=media" \
+              -H "x-goog-api-key: $ANTIGRAVITY_API_KEY")"
+          fi
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Unable to download Antigravity sandbox snapshot. HTTP $HTTP_CODE"
+            exit 42
+          fi
+
+          tar -xf /tmp/antigravity-snapshot.tar -C /tmp/antigravity-snapshot
+
+          WEB_DIR="$(find /tmp/antigravity-snapshot -type f -path "*/$BUILD_TARGET/package.json" -print -quit | xargs -r dirname)"
+
+          if [ -z "$WEB_DIR" ] || [ ! -f "$WEB_DIR/package.json" ]; then
+            echo "::error::Antigravity completed but $BUILD_TARGET was not found in the sandbox snapshot."
+            find /tmp/antigravity-snapshot -maxdepth 6 -type f | head -200
+            exit 40
+          fi
+
+          echo "WEB_DIR=$WEB_DIR" >> "$GITHUB_ENV"
+
+      - name: Create governed frontend build branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OUTPUT_BRANCH="build/arabic-ai-ipaas-frontend-v0.1-${GITHUB_RUN_ID}"
+
+          git fetch origin "$PRODUCT_BASE_BRANCH"
+          git checkout -B "$OUTPUT_BRANCH" "origin/$PRODUCT_BASE_BRANCH"
+
+          rm -rf "$BUILD_TARGET"
+          mkdir -p "$(dirname "$BUILD_TARGET")"
+          cp -R "$WEB_DIR" "$BUILD_TARGET"
+
+          mkdir -p factory/status
+          jq -n             --arg productId "arabic-ai-ipaas"             --arg stage "FRONTEND_BUILD"             --arg status "${{ steps.build.outputs.build_status }}"             --arg interactionId "${{ steps.build.outputs.interaction_id }}"             --arg sourceRun "$GITHUB_RUN_ID"             '{
+              schemaVersion: 1,
+              productId: $productId,
+              stage: $stage,
+              status: $status,
+              provider: "google-antigravity",
+              interactionId: $interactionId,
+              sourceWorkflowRun: $sourceRun
+            }' > factory/status/arabic-ai-ipaas-frontend-build.latest.json
+
+          git config user.name "OGroup AI Factory"
+          git config user.email "factory@ogroup.ai"
+          git add "$BUILD_TARGET" factory/status/arabic-ai-ipaas-frontend-build.latest.json
+
+          if git diff --cached --quiet; then
+            echo "::error::Antigravity returned no frontend changes."
+            exit 41
+          fi
+
+          git commit -m "build(arabic-ai-ipaas): frontend v0.1 from Antigravity"
+          git push origin "$OUTPUT_BRANCH"
+
+          echo "OUTPUT_BRANCH=$OUTPUT_BRANCH" >> "$GITHUB_ENV"
+
+      - name: Open frontend review PR
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr create             --base "$PRODUCT_BASE_BRANCH"             --head "$OUTPUT_BRANCH"             --title "Arabic AI iPaaS: frontend build v0.1"             --body "Autonomous Frontend Build Agent output. Source: Google Antigravity. Status: ${{ steps.build.outputs.build_status }}. Target: eight approved Stitch screens. Factory Review/Security/Test gates must pass before merge. If PARTIAL_READY, continue from this branch rather than restarting."             || echo "::warning::Branch was pushed but automatic PR creation was unavailable. The Factory can open it separately."
