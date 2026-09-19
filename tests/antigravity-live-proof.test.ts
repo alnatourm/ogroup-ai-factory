@@ -12,7 +12,7 @@ live('Antigravity controlled live proof', () => {
       taskId: 'antigravity-live-proof',
       productId: 'ogroup-ai-factory',
       instructions: 'Create a file named proof.txt containing exactly: ANTIGRAVITY_CONNECTED. Then reply with exactly ANTIGRAVITY_CONNECTED.',
-      maxTotalTokens: 5000,
+      maxTotalTokens: 50000,
       executionMode: 'foreground',
     });
 
