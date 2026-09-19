@@ -39,3 +39,37 @@ export function redactProvider<T extends { secretCiphertext: string }>(
   ) as Omit<T, 'secretCiphertext'>;
   return { ...safe, hasSecret: true };
 }
+
+const BLOCKED_HOSTS = new Set([
+  '169.254.169.254',
+  'metadata.google.internal',
+  'metadata',
+  'instance-data',
+]);
+
+/**
+ * Validates outbound provider connection base URLs against SSRF and protocol misuse.
+ */
+export function validateProviderBaseUrl(baseUrl: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error('INVALID_PROVIDER_BASE_URL: URL must be well-formed');
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS: Only HTTPS endpoints are permitted');
+  }
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (
+    BLOCKED_HOSTS.has(hostname) ||
+    hostname.endsWith('.internal') ||
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1'
+  ) {
+    throw new Error('PROVIDER_BASE_URL_NOT_ALLOWED: Target host is blocked by sovereign SSRF policy');
+  }
+}

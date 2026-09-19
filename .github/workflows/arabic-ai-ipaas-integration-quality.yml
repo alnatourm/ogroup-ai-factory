@@ -1,0 +1,71 @@
+name: Arabic AI iPaaS Integration Quality
+
+on:
+  pull_request:
+    branches:
+      - product/arabic-ai-ipaas-database-v0.1
+    paths:
+      - 'apps/arabic-ai-ipaas-api/**'
+      - 'apps/arabic-ai-ipaas-web/**'
+      - '.github/workflows/arabic-ai-ipaas-integration-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/arabic-ai-ipaas-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install backend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Backend typecheck
+        run: npm run typecheck
+
+      - name: Backend tests
+        run: npm test
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/arabic-ai-ipaas-web
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Frontend typecheck
+        run: npm run typecheck
+
+      - name: Frontend lint
+        run: npm run lint
+
+      - name: Frontend tests
+        run: npm test
+
+      - name: Frontend build
+        run: npm run build

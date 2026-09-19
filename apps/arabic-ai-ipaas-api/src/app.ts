@@ -1,11 +1,40 @@
 import crypto from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { ApiKeyVerifier } from './auth.js';
+import { MemoryAuditRepository, type AuditRepository } from './audit-service.js';
+import {
+  handleDataPolicyUpdate,
+  MemoryDataPolicyRepository,
+  type DataPolicyRepository,
+} from './data-policy.js';
+import {
+  MemoryDocumentRepository,
+  queueDocumentExtraction,
+  validateDocumentUpload,
+  type DocumentRepository,
+} from './document-service.js';
 import { MemoryProviderRepository } from './memory-repository.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
-import { decryptSecret, encryptSecret, redactProvider } from './security.js';
-import type { GatewayRequest, ProviderType, RequestContext, WorkspaceRole } from './types.js';
+import { decryptSecret, encryptSecret, redactProvider, validateProviderBaseUrl } from './security.js';
+import {
+  getUsageSummaryForWorkspace,
+  MemoryTraceRepository,
+  type TraceRepository,
+} from './usage-service.js';
+import {
+  executeWorkflow,
+  MemoryWorkflowRepository,
+  validateWorkflowDefinition,
+  type WorkflowRepository,
+} from './workflow-engine.js';
+import type {
+  DataPolicyConfig,
+  GatewayRequest,
+  ProviderType,
+  RequestContext,
+  WorkspaceRole,
+} from './types.js';
 
 type FactoryRequest = Request & { factoryContext?: RequestContext };
 
@@ -17,6 +46,12 @@ function getContext(req: Request): RequestContext {
   const context = (req as FactoryRequest).factoryContext;
   if (!context) throw new Error('FACTORY_CONTEXT_MISSING');
   return context;
+}
+
+function getPathId(req: Request): string {
+  const id = req.params.id;
+  if (typeof id !== 'string') throw new Error('INVALID_PATH_PARAMETER');
+  return id;
 }
 
 const VALID_ROLES = new Set<WorkspaceRole>([
@@ -34,6 +69,8 @@ const VALID_PROVIDER_TYPES = new Set<ProviderType>([
   'anthropic-compatible',
   'custom-http',
 ]);
+
+const VALID_WORKFLOW_STATUSES = new Set(['draft', 'active', 'paused', 'archived']);
 
 function buildContextMiddleware(
   apiKeyVerifier: ApiKeyVerifier | undefined,
@@ -69,24 +106,79 @@ function buildContextMiddleware(
   };
 }
 
-function requireWriteRole(req: Request, res: Response, next: NextFunction): void {
-  const role = getContext(req).role;
-  if (!role || !['workspace_owner', 'workspace_admin', 'developer'].includes(role)) {
-    res.status(403).json({ error: 'INSUFFICIENT_ROLE' });
-    return;
+function requireRoles(roles: WorkspaceRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!roles.includes(getContext(req).role)) {
+      res.status(403).json({ error: 'INSUFFICIENT_ROLE' });
+      return;
+    }
+    next();
+  };
+}
+
+const requireWriteRole = requireRoles(['workspace_owner', 'workspace_admin', 'developer']);
+const requireWorkflowWriteRole = requireRoles([
+  'workspace_owner',
+  'workspace_admin',
+  'developer',
+  'automation_builder',
+]);
+const requirePolicyWriteRole = requireRoles(['workspace_owner', 'workspace_admin']);
+
+function dataPolicyUpdates(body: unknown): Partial<DataPolicyConfig> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('INVALID_DATA_POLICY');
   }
-  next();
+  const record = body as Record<string, unknown>;
+  const allowed = new Set([
+    'dataZone',
+    'piiMaskingEnabled',
+    'retentionDays',
+    'auditLoggingEnabled',
+    'strictZdrLevel',
+    'dualAdminApprovalRequired',
+    'optInConfirmed',
+    'rightsBasis',
+  ]);
+  if (Object.keys(record).some((key) => !allowed.has(key))) {
+    throw new Error('INVALID_DATA_POLICY_FIELD');
+  }
+  for (const key of ['piiMaskingEnabled', 'auditLoggingEnabled', 'dualAdminApprovalRequired', 'optInConfirmed']) {
+    if (record[key] !== undefined && typeof record[key] !== 'boolean') {
+      throw new Error('INVALID_DATA_POLICY');
+    }
+  }
+  for (const key of ['retentionDays', 'strictZdrLevel']) {
+    const value = record[key];
+    if (value !== undefined && (typeof value !== 'number' || !Number.isInteger(value) || value < 0)) {
+      throw new Error('INVALID_DATA_POLICY');
+    }
+  }
+  if (record.rightsBasis !== undefined && typeof record.rightsBasis !== 'string') {
+    throw new Error('INVALID_DATA_POLICY');
+  }
+  return record as Partial<DataPolicyConfig>;
 }
 
 export function createApp(options: {
   masterKey?: string;
   providerRepository?: ProviderRepository;
+  workflowRepository?: WorkflowRepository;
+  dataPolicyRepository?: DataPolicyRepository;
+  auditRepository?: AuditRepository;
+  documentRepository?: DocumentRepository;
+  traceRepository?: TraceRepository;
   adapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
   allowInsecureTestHeaders?: boolean;
 } = {}) {
   const app = express();
-  const repository = options.providerRepository ?? new MemoryProviderRepository();
+  const providerRepository = options.providerRepository ?? new MemoryProviderRepository();
+  const workflowRepository = options.workflowRepository ?? new MemoryWorkflowRepository();
+  const dataPolicyRepository = options.dataPolicyRepository ?? new MemoryDataPolicyRepository();
+  const auditRepository = options.auditRepository ?? new MemoryAuditRepository();
+  const documentRepository = options.documentRepository ?? new MemoryDocumentRepository();
+  const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
   const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
 
@@ -98,18 +190,15 @@ export function createApp(options: {
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.2.0' });
+    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.3.0' });
   });
 
-  app.use(
-    '/v1',
-    buildContextMiddleware(options.apiKeyVerifier, options.allowInsecureTestHeaders === true),
-  );
+  app.use('/v1', buildContextMiddleware(options.apiKeyVerifier, options.allowInsecureTestHeaders === true));
 
   app.get('/v1/provider-connections', async (req, res, next) => {
     try {
       const workspaceId = getContext(req).workspaceId;
-      res.json({ data: (await repository.list(workspaceId)).map(redactProvider) });
+      res.json({ data: (await providerRepository.list(workspaceId)).map(redactProvider) });
     } catch (error) {
       next(error);
     }
@@ -131,8 +220,9 @@ export function createApp(options: {
         res.status(400).json({ error: 'INVALID_PROVIDER_CONNECTION' });
         return;
       }
+      if (baseUrl) validateProviderBaseUrl(baseUrl);
 
-      const provider = await repository.create({
+      const provider = await providerRepository.create({
         workspaceId,
         providerType,
         name,
@@ -152,7 +242,7 @@ export function createApp(options: {
     try {
       const workspaceId = getContext(req).workspaceId;
       const providerId = req.params.id;
-      if (typeof providerId !== 'string' || !(await repository.remove(workspaceId, providerId))) {
+      if (typeof providerId !== 'string' || !(await providerRepository.remove(workspaceId, providerId))) {
         res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
         return;
       }
@@ -162,16 +252,285 @@ export function createApp(options: {
     }
   });
 
-  app.post('/v1/chat/completions', async (req, res, next) => {
+  app.get('/v1/workflows', async (req, res, next) => {
+    try {
+      res.json({ data: await workflowRepository.list(getContext(req).workspaceId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/workflows', requireWorkflowWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const { name, description, definition } = req.body as {
+        name?: string;
+        description?: string;
+        definition?: unknown;
+      };
+      if (!name?.trim()) {
+        res.status(400).json({ error: 'WORKFLOW_NAME_REQUIRED' });
+        return;
+      }
+      const workflow = await workflowRepository.create({
+        workspaceId: context.workspaceId,
+        name: name.trim(),
+        ...(typeof description === 'string' ? { description } : {}),
+        definition: validateWorkflowDefinition(definition),
+        createdBy: context.userId,
+      });
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'workflow.created',
+        entityType: 'workflow',
+        entityId: workflow.id,
+        metadata: { version: workflow.version },
+      });
+      res.status(201).json({ data: workflow });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/workflows/:id', async (req, res, next) => {
+    try {
+      const workflow = await workflowRepository.get(getContext(req).workspaceId, req.params.id);
+      if (!workflow) {
+        res.status(404).json({ error: 'WORKFLOW_NOT_FOUND' });
+        return;
+      }
+      res.json({ data: workflow });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/v1/workflows/:id', requireWorkflowWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const body = req.body as Record<string, unknown>;
+      const allowed = new Set(['name', 'description', 'definition', 'status']);
+      if (!body || Object.keys(body).some((key) => !allowed.has(key))) {
+        res.status(400).json({ error: 'INVALID_WORKFLOW_UPDATE' });
+        return;
+      }
+      if (body.status !== undefined && (typeof body.status !== 'string' || !VALID_WORKFLOW_STATUSES.has(body.status))) {
+        res.status(400).json({ error: 'INVALID_WORKFLOW_STATUS' });
+        return;
+      }
+      const workflow = await workflowRepository.update(context.workspaceId, getPathId(req), {
+        ...(typeof body.name === 'string' && body.name.trim() ? { name: body.name.trim() } : {}),
+        ...(typeof body.description === 'string' ? { description: body.description } : {}),
+        ...(body.definition !== undefined ? { definition: validateWorkflowDefinition(body.definition) } : {}),
+        ...(typeof body.status === 'string' ? { status: body.status as 'draft' | 'active' | 'paused' | 'archived' } : {}),
+      });
+      if (!workflow) {
+        res.status(404).json({ error: 'WORKFLOW_NOT_FOUND' });
+        return;
+      }
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'workflow.updated',
+        entityType: 'workflow',
+        entityId: workflow.id,
+        metadata: { version: workflow.version, status: workflow.status },
+      });
+      res.json({ data: workflow });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/workflows/:id/runs', requireWorkflowWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const workflow = await workflowRepository.get(context.workspaceId, getPathId(req));
+      if (!workflow) {
+        res.status(404).json({ error: 'WORKFLOW_NOT_FOUND' });
+        return;
+      }
+      if (workflow.status !== 'active') {
+        res.status(409).json({ error: 'WORKFLOW_NOT_ACTIVE' });
+        return;
+      }
+      const input = req.body?.input;
+      if (input !== undefined && (!input || typeof input !== 'object' || Array.isArray(input))) {
+        res.status(400).json({ error: 'INVALID_WORKFLOW_INPUT' });
+        return;
+      }
+      const run = await executeWorkflow(
+        workflow,
+        'manual',
+        (input ?? {}) as Record<string, unknown>,
+        workflowRepository,
+      );
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'workflow.executed',
+        entityType: 'workflow_run',
+        entityId: run.id,
+        metadata: { workflowId: workflow.id, status: run.status },
+      });
+      res.status(201).json({ data: run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/workflow-runs', async (req, res, next) => {
+    try {
+      const workflowId = typeof req.query.workflowId === 'string' ? req.query.workflowId : undefined;
+      res.json({ data: await workflowRepository.listRuns(getContext(req).workspaceId, workflowId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/workflow-runs/:id', async (req, res, next) => {
+    try {
+      const run = await workflowRepository.getRun(getContext(req).workspaceId, req.params.id);
+      if (!run) {
+        res.status(404).json({ error: 'WORKFLOW_RUN_NOT_FOUND' });
+        return;
+      }
+      res.json({ data: run });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/data-policy', async (req, res, next) => {
+    try {
+      res.json({ data: await dataPolicyRepository.get(getContext(req).workspaceId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/v1/data-policy', requirePolicyWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const policy = await handleDataPolicyUpdate(
+        context.workspaceId,
+        dataPolicyUpdates(req.body),
+        context.userId,
+        dataPolicyRepository,
+        auditRepository,
+      );
+      res.json({ data: policy });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/documents', async (req, res, next) => {
+    try {
+      res.json({ data: await documentRepository.list(getContext(req).workspaceId) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/documents', requireWorkflowWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const { filename, mediaType, sizeBytes } = req.body as Record<string, unknown>;
+      const metadata = validateDocumentUpload(filename, mediaType, sizeBytes);
+      const document = await documentRepository.create({
+        workspaceId: context.workspaceId,
+        createdBy: context.userId,
+        ...metadata,
+      });
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.registered',
+        entityType: 'document',
+        entityId: document.id,
+        metadata: { mediaType: document.mediaType, sizeBytes: document.sizeBytes },
+      });
+      res.status(201).json({ data: document, uploadConfigured: false });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/documents/:id', async (req, res, next) => {
     try {
       const workspaceId = getContext(req).workspaceId;
-      const providers = (await repository.list(workspaceId)).filter((item) => item.status === 'active');
+      const document = await documentRepository.get(workspaceId, req.params.id);
+      if (!document) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const extraction = await documentRepository.getExtraction(workspaceId, document.id);
+      res.json({ data: { document, extraction: extraction ?? null } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/documents/:id/extractions', requireWorkflowWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const documentId = getPathId(req);
+      if (!(await documentRepository.get(context.workspaceId, documentId))) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const queued = await queueDocumentExtraction(context.workspaceId, documentId, documentRepository);
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.extraction_requested',
+        entityType: 'document',
+        entityId: documentId,
+        metadata: { workerConfigured: queued.configured },
+      });
+      res.status(202).json({
+        data: queued,
+        workerState: queued.configured ? 'configured' : 'not_configured',
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/usage/summary', async (req, res, next) => {
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      res.json({
+        data: await getUsageSummaryForWorkspace(
+          workspaceId,
+          traceRepository,
+          workflowRepository,
+          documentRepository,
+          providerRepository,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/chat/completions', async (req, res, next) => {
+    const startedAt = Date.now();
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      const providers = (await providerRepository.list(workspaceId)).filter((item) => item.status === 'active');
       const provider = providers[0];
       if (!provider) {
         res.status(409).json({ error: 'NO_ACTIVE_PROVIDER_CONNECTION' });
         return;
       }
-
       if (provider.providerType !== 'openai-compatible') {
         res.status(501).json({ error: 'PROVIDER_ADAPTER_NOT_IMPLEMENTED', providerType: provider.providerType });
         return;
@@ -184,25 +543,44 @@ export function createApp(options: {
       }
 
       const secret = decryptSecret(provider.secretCiphertext, masterKey);
-      const completion = await adapter.complete(input, provider, secret);
-      const created = Math.floor(Date.now() / 1000);
-
-      res.json({
-        id: `chatcmpl_${crypto.randomUUID()}`,
-        object: 'chat.completion',
-        created,
-        model: completion.model,
-        choices: [{
-          index: 0,
-          message: { role: 'assistant', content: completion.content },
-          finish_reason: 'stop',
-        }],
-        usage: {
-          prompt_tokens: completion.promptTokens,
-          completion_tokens: completion.completionTokens,
-          total_tokens: completion.promptTokens + completion.completionTokens,
-        },
-      });
+      try {
+        const completion = await adapter.complete(input, provider, secret);
+        await traceRepository.record({
+          workspaceId,
+          providerConnectionId: provider.id,
+          model: completion.model,
+          inputTokens: completion.promptTokens,
+          outputTokens: completion.completionTokens,
+          latencyMs: Date.now() - startedAt,
+          status: 'succeeded',
+          safeMetadata: { model: completion.model },
+        });
+        res.json({
+          id: `chatcmpl_${crypto.randomUUID()}`,
+          object: 'chat.completion',
+          created: Math.floor(Date.now() / 1000),
+          model: completion.model,
+          choices: [{ index: 0, message: { role: 'assistant', content: completion.content }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: completion.promptTokens,
+            completion_tokens: completion.completionTokens,
+            total_tokens: completion.promptTokens + completion.completionTokens,
+          },
+        });
+      } catch {
+        await traceRepository.record({
+          workspaceId,
+          providerConnectionId: provider.id,
+          model: input.model ?? provider.modelDefault ?? 'unknown',
+          inputTokens: 0,
+          outputTokens: 0,
+          latencyMs: Date.now() - startedAt,
+          status: 'failed',
+          errorCode: 'PROVIDER_REQUEST_FAILED',
+          safeMetadata: { model: input.model ?? provider.modelDefault ?? 'unknown' },
+        });
+        res.status(502).json({ error: 'PROVIDER_REQUEST_FAILED' });
+      }
     } catch (error) {
       next(error);
     }
@@ -210,7 +588,30 @@ export function createApp(options: {
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const message = error instanceof Error ? error.message : 'UNKNOWN_ERROR';
-    res.status(500).json({ error: 'INTERNAL_ERROR', message });
+    const code = message.split(':')[0] ?? 'UNKNOWN_ERROR';
+    const badRequestCodes = new Set([
+      'INVALID_WORKFLOW_DEFINITION',
+      'INVALID_WORKFLOW_VERSION',
+      'INVALID_DATA_ZONE',
+      'INVALID_DATA_POLICY',
+      'INVALID_DATA_POLICY_FIELD',
+      'INVALID_FILENAME',
+      'UNSUPPORTED_MEDIA_TYPE',
+      'INVALID_FILE_SIZE',
+      'FILE_TOO_LARGE',
+      'INVALID_PROVIDER_BASE_URL',
+      'PROVIDER_BASE_URL_MUST_USE_HTTPS',
+      'PROVIDER_BASE_URL_NOT_ALLOWED',
+    ]);
+    if (badRequestCodes.has(code)) {
+      res.status(400).json({ error: code });
+      return;
+    }
+    if (code === 'EXPLICIT_OPT_IN_REQUIRED') {
+      res.status(409).json({ error: code });
+      return;
+    }
+    res.status(500).json({ error: 'INTERNAL_ERROR' });
   });
 
   return app;
