@@ -295,7 +295,7 @@ export const ProviderConnectionsPage: React.FC = () => {
                     <span>{t('security.secretStored')}</span>
                   </div>
                   <Badge variant="neutral" size="sm">
-                    {provider.hasSecret ? 'FIPS 140-3' : 'No Secret'}
+                    {provider.hasSecret ? (language === 'ar' ? 'اعتماد محفوظ' : 'Credential Stored') : (language === 'ar' ? 'بدون اعتماد' : 'No Credential')}
                   </Badge>
                 </div>
 
