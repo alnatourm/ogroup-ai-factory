@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "productId": "arabic-ai-ipaas",
+  "stage": "INTEGRATION_BUILD",
+  "status": "PARTIAL_READY",
+  "provider": "google-antigravity",
+  "interactionId": "v1_ChZNYml1YXR2S0FyN2lfdU1QaUozNWFBEhZNYml1YXR2S0FyN2lfdU1QaUozNWFB",
+  "sourceWorkflowRun": "35455058750"
+}
