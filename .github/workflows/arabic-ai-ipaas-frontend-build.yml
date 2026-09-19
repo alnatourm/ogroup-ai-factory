@@ -78,29 +78,55 @@ jobs:
             exit 30
           fi
 
-          if [ "$STATUS" = "incomplete" ]; then
-            echo "::warning::Antigravity hit its first token budget. Continuing once in the same sandbox."
+          PASS=1
+          while [ "$STATUS" = "incomplete" ] && [ "$PASS" -le 3 ]; do
+            echo "::warning::Antigravity pass $PASS hit its token budget. Continuing in the same sandbox."
 
-            CONTINUE_JSON="$(jq -n               --arg previous "$INTERACTION_ID"               --arg environment "$ENVIRONMENT_ID"               '{
+            case "$PASS" in
+              1)
+                NEXT_TASK="Continue from the existing Arabic AI iPaaS frontend sandbox. Finish the app shell, routing, workspace onboarding, provider connections, and gateway playground. Do not restart. Run focused checks for the work completed."
+                BUDGET=70000
+                ;;
+              2)
+                NEXT_TASK="Continue from the existing sandbox. Finish workflow builder, workflow runs, document intelligence, usage dashboard, and data policy. Do not redesign completed screens. Run focused checks."
+                BUDGET=70000
+                ;;
+              *)
+                NEXT_TASK="Final verification pass. Finish any remaining small frontend pieces, run npm run typecheck, npm run lint, npm test, and npm run build inside apps/arabic-ai-ipaas-web. Repair concrete failures only. Ensure BUILD_REPORT.md exists and end with FRONTEND_BUILD_COMPLETED."
+                BUDGET=50000
+                ;;
+            esac
+
+            CONTINUE_JSON="$(jq -n \
+              --arg environment "$ENVIRONMENT_ID" \
+              --arg task "$NEXT_TASK" \
+              --argjson budget "$BUDGET" \
+              '{
                 agent: "antigravity-preview-09-2026",
-                previous_interaction_id: $previous,
                 environment: $environment,
-                input: "Continue the assigned Arabic AI iPaaS Frontend Build v0.1 from the existing sandbox. Finish implementation, run all required checks, repair failures, write BUILD_REPORT.md, and end with FRONTEND_BUILD_COMPLETED.",
+                input: $task,
                 agent_config: {
                   type: "antigravity",
-                  max_total_tokens: 50000
+                  max_total_tokens: $budget
                 },
                 store: true
               }')"
 
-            curl --fail-with-body -sS --max-time 1200               -X POST "https://generativelanguage.googleapis.com/v1beta/interactions"               -H "Content-Type: application/json"               -H "x-goog-api-key: $ANTIGRAVITY_API_KEY"               -H "Api-Revision: 2026-05-20"               -d "$CONTINUE_JSON"               -o /tmp/antigravity-response-2.json
+            curl --fail-with-body -sS --max-time 1200 \
+              -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: $ANTIGRAVITY_API_KEY" \
+              -H "Api-Revision: 2026-05-20" \
+              -d "$CONTINUE_JSON" \
+              -o "/tmp/antigravity-response-pass-$PASS.json"
 
-            STATUS="$(jq -r '.status // "unknown"' /tmp/antigravity-response-2.json)"
-            echo "Antigravity continuation status: $STATUS"
-          fi
+            STATUS="$(jq -r '.status // "unknown"' "/tmp/antigravity-response-pass-$PASS.json")"
+            echo "Antigravity pass $PASS status: $STATUS"
+            PASS=$((PASS + 1))
+          done
 
           if [ "$STATUS" != "completed" ]; then
-            echo "::error::Antigravity build did not complete. Final status: $STATUS"
+            echo "::error::Antigravity build did not complete after governed multi-pass repair. Final status: $STATUS"
             exit 31
           fi
 
