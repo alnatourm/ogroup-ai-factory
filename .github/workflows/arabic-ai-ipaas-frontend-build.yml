@@ -79,7 +79,7 @@ jobs:
           fi
 
           PASS=1
-          while [ "$STATUS" = "incomplete" ] && [ "$PASS" -le 3 ]; do
+          while [ "$STATUS" = "incomplete" ] && [ "$PASS" -le 2 ]; do
             echo "::warning::Antigravity pass $PASS hit its token budget. Continuing in the same sandbox."
 
             case "$PASS" in
@@ -125,8 +125,13 @@ jobs:
             PASS=$((PASS + 1))
           done
 
-          if [ "$STATUS" != "completed" ]; then
-            echo "::error::Antigravity build did not complete after governed multi-pass repair. Final status: $STATUS"
+          if [ "$STATUS" = "completed" ]; then
+            echo "build_status=READY_FOR_REVIEW" >> "$GITHUB_OUTPUT"
+          elif [ "$STATUS" = "incomplete" ]; then
+            echo "::warning::Antigravity reached its governed budget. Salvaging the current sandbox as PARTIAL_READY instead of discarding work."
+            echo "build_status=PARTIAL_READY" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Antigravity build ended in non-recoverable status: $STATUS"
             exit 31
           fi
 
