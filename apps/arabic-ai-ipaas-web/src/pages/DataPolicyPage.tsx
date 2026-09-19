@@ -77,7 +77,7 @@ export const DataPolicyPage: React.FC = () => {
               {language === 'ar' ? 'حوكمة البيانات والسيادة' : 'Data Governance & Sovereignty'}
             </Badge>
             <Badge variant="success" size="md">
-              NDMO-L4 Compliant
+              Policy Profile
             </Badge>
           </div>
           <h1 className="text-xl lg:text-2xl font-bold text-primary font-arabic">
@@ -87,8 +87,8 @@ export const DataPolicyPage: React.FC = () => {
           </h1>
           <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
             {language === 'ar'
-              ? 'إدارة مستويات تصنيف وحماية البيانات السيادية (PRIVATE, ANONYMOUS, OPT-IN) وحوكمة النماذج مع ضمانات عدم التدريب والاحتفاظ الصفري (Zero Data Retention).'
-              : 'Configure sovereign data tiers, privacy safeguards, and verify strict zero data retention compliance.'}
+              ? 'إدارة مستويات تصنيف وحماية البيانات (PRIVATE, ANONYMOUS, OPT-IN) وحوكمة النماذج. أي ضمانات امتثال أو احتفاظ تعتمد على إعدادات البنية الخلفية والمزود الفعلي.'
+              : 'Configure data tiers and privacy safeguards. Compliance and retention guarantees depend on verified backend and provider configuration.'}
           </p>
         </div>
 
@@ -158,7 +158,7 @@ export const DataPolicyPage: React.FC = () => {
                   </div>
                   <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-emerald-700 font-semibold flex items-center gap-1 font-arabic">
                     <span className="material-symbols-outlined text-[14px]">verified_user</span>
-                    <span>{language === 'ar' ? 'ضمان عدم التدريب (No Training)' : 'Guaranteed No Training'}</span>
+                    <span>{language === 'ar' ? 'وضع عدم التدريب المطلوب' : 'No-Training Policy Requested'}</span>
                   </div>
                 </div>
 
