@@ -4,7 +4,7 @@ import type { ApiKeyVerifier } from './auth.js';
 import { MemoryProviderRepository } from './memory-repository.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
-import { decryptSecret, encryptSecret, redactProvider } from './security.js';
+import { decryptSecret, encryptSecret, redactProvider, validateProviderBaseUrl } from './security.js';
 import type { GatewayRequest, ProviderType, RequestContext, WorkspaceRole } from './types.js';
 
 type FactoryRequest = Request & { factoryContext?: RequestContext };
@@ -130,6 +130,10 @@ export function createApp(options: {
       if (!providerType || !VALID_PROVIDER_TYPES.has(providerType) || !name || !apiKey) {
         res.status(400).json({ error: 'INVALID_PROVIDER_CONNECTION' });
         return;
+      }
+
+      if (baseUrl) {
+        validateProviderBaseUrl(baseUrl);
       }
 
       const provider = await repository.create({
