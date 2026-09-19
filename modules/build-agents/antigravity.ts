@@ -15,7 +15,10 @@ interface AntigravityInteractionsClient {
     input: Record<string, unknown>,
     options?: { timeout?: number },
   ): Promise<AntigravityInteraction>;
-  get(interactionId: string): Promise<AntigravityInteraction>;
+  get(
+    interactionId: string,
+    params?: { api_version?: string },
+  ): Promise<AntigravityInteraction>;
 }
 
 export interface AntigravityBuildAgentOptions {
@@ -50,6 +53,7 @@ export class AntigravityBuildAgent implements BuildAgent {
 
     const interaction = await this.interactions.create(
       {
+        api_version: '2026-05-20',
         agent: this.agent,
         input: request.instructions,
         environment: request.sources?.length
@@ -80,7 +84,10 @@ export class AntigravityBuildAgent implements BuildAgent {
       throw new Error('INTERACTION_ID_REQUIRED');
     }
 
-    return this.normalize(await this.interactions.get(interactionId));
+    return this.normalize(await this.interactions.get(
+      interactionId,
+      { api_version: '2026-05-20' },
+    ));
   }
 
   private normalize(response: AntigravityInteraction): BuildAgentRun {
