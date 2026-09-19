@@ -25,8 +25,9 @@ export class OpenAICompatibleProviderAdapter implements ProviderAdapter {
     provider: ProviderConnection,
     secret: string,
   ): Promise<ProviderCompletion> {
-    const baseUrl = provider.baseUrl ?? 'https://api.openai.com';
-    const url = new URL('/v1/chat/completions', baseUrl);
+    const baseUrl = provider.baseUrl ?? 'https://api.openai.com/v1';
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const url = new URL('chat/completions', normalizedBase);
     if (url.protocol !== 'https:') {
       throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS');
     }
