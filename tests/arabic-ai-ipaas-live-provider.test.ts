@@ -4,7 +4,8 @@ import { OpenAICompatibleProviderAdapter } from '../apps/arabic-ai-ipaas-api/src
 const apiKey = process.env.LIVE_PROVIDER_API_KEY;
 const baseUrl = process.env.LIVE_PROVIDER_BASE_URL;
 const model = process.env.LIVE_PROVIDER_MODEL;
-const describeLive = apiKey && baseUrl && model ? describe : describe.skip;
+const liveConfig = apiKey && baseUrl && model ? { apiKey, baseUrl, model } : null;
+const describeLive = liveConfig ? describe : describe.skip;
 
 describeLive('Arabic AI iPaaS controlled live-provider proof', () => {
   it('sends an Arabic prompt to a real OpenAI-compatible provider and receives a non-empty answer', async () => {
@@ -12,7 +13,7 @@ describeLive('Arabic AI iPaaS controlled live-provider proof', () => {
 
     const result = await adapter.complete(
       {
-        model,
+        model: liveConfig!.model,
         messages: [
           {
             role: 'user',
@@ -26,15 +27,15 @@ describeLive('Arabic AI iPaaS controlled live-provider proof', () => {
         workspaceId: 'factory-live-proof',
         providerType: 'openai-compatible',
         name: 'Controlled live provider',
-        baseUrl,
-        modelDefault: model,
+        baseUrl: liveConfig!.baseUrl,
+        modelDefault: liveConfig!.model,
         secretCiphertext: 'not-used-by-adapter-proof',
         config: {},
         status: 'active',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       },
-      apiKey,
+      liveConfig!.apiKey,
     );
 
     expect(result.content.trim().length).toBeGreaterThan(0);
