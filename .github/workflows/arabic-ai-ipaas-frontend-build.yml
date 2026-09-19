@@ -112,13 +112,26 @@ jobs:
                 store: true
               }')"
 
-            curl --fail-with-body -sS --max-time 1200 \
+            HTTP_CODE="$(curl -sS --max-time 1200 \
+              -o "/tmp/antigravity-response-pass-$PASS.json" \
+              -w "%{http_code}" \
               -X POST "https://generativelanguage.googleapis.com/v1beta/interactions" \
               -H "Content-Type: application/json" \
               -H "x-goog-api-key: $ANTIGRAVITY_API_KEY" \
               -H "Api-Revision: 2026-05-20" \
-              -d "$CONTINUE_JSON" \
-              -o "/tmp/antigravity-response-pass-$PASS.json"
+              -d "$CONTINUE_JSON")"
+
+            if [ "$HTTP_CODE" = "429" ]; then
+              echo "::warning::Antigravity rate limit reached during pass $PASS. Preserving the current sandbox as PARTIAL_READY."
+              STATUS="incomplete"
+              break
+            fi
+
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "::error::Antigravity continuation request failed with HTTP $HTTP_CODE."
+              jq '{error, status}' "/tmp/antigravity-response-pass-$PASS.json" 2>/dev/null || true
+              exit 32
+            fi
 
             STATUS="$(jq -r '.status // "unknown"' "/tmp/antigravity-response-pass-$PASS.json")"
             echo "Antigravity pass $PASS status: $STATUS"
