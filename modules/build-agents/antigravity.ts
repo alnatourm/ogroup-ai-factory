@@ -51,7 +51,7 @@ export class AntigravityBuildAgent implements BuildAgent {
             })),
           }
         : 'remote',
-      background: true,
+      background: request.executionMode !== 'foreground',
       store: true,
       agent_config: {
         type: 'antigravity',
