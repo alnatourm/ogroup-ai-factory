@@ -10,6 +10,7 @@ export interface BuildAgentRequest {
   productId: string;
   instructions: string;
   maxTotalTokens?: number;
+  executionMode?: 'foreground' | 'background';
   sources?: BuildSource[];
 }
 
