@@ -52,8 +52,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Typecheck backend workspace
+        run: npm run typecheck --workspace @ogroup/arabic-ai-ipaas-api
 
       - name: Unit and PostgreSQL capability tests
         run: npm test -- --run tests/arabic-ai-ipaas-api.test.ts tests/arabic-ai-ipaas-postgres.test.ts
