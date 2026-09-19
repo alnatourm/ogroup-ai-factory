@@ -33,6 +33,8 @@ app.use(express.static(frontendPath, {
   },
 }));
 
+app.get('/favicon.ico', (_request, response) => response.status(204).end());
+
 app.get(/^(?!\/(?:v1|health)(?:\/|$)).*/, (_request, response) => {
   response.setHeader('Cache-Control', 'no-store');
   response.sendFile(frontendIndex);
