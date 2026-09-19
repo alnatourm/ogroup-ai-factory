@@ -5,7 +5,6 @@ import type {
   WorkflowRunRecord,
   WorkflowStepDefinition,
   WorkflowStepRunRecord,
-  WorkflowStepType,
 } from './types.js';
 
 export interface WorkflowRepository {
@@ -395,7 +394,7 @@ export async function executeWorkflow(
  * Natural language Arabic workflow compiler
  * Transforms Arabic instructions into structured Workflow JSON v1
  */
-export function compileArabicWorkflowPrompt(instructionAr: string, workspaceId: string): {
+export function compileArabicWorkflowPrompt(instructionAr: string, _workspaceId: string): {
   nameAr: string;
   nameEn: string;
   promptInstructionAr: string;
