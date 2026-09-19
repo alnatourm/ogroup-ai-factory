@@ -6,7 +6,7 @@ Arabic AI iPaaS Integration v0.1
 
 ## Review status
 
-**BLOCKED_PENDING_GREEN_QUALITY_GATE**
+**MERGE_READY_WHEN_CURRENT_HEAD_GATES_ARE_GREEN**
 
 The Antigravity integration slice contains useful backend building blocks, but it was not ready to merge as delivered.
 
@@ -31,8 +31,8 @@ The Antigravity integration slice contains useful backend building blocks, but i
 
 ## Important remaining limitations
 
-- The newly generated workflow/data-policy/document/usage services are not yet fully exposed through `createApp` routes. They are service/repository building blocks, not yet a complete live API integration.
-- Production PostgreSQL bootstrap/wiring must still prove that the new repositories are instantiated and migrations match the runtime schema.
+- Workflow CRUD/manual runs, data-policy, document registration/extraction status, and usage summary are now exposed through authenticated, tenant-scoped `createApp` routes.
+- A production PostgreSQL application bootstrap now instantiates every repository and the API-key verifier. Deployment must still run the approved migrations before serving traffic.
 - SSRF protection currently blocks obvious unsafe literal destinations, but DNS resolution/private-address verification is not yet a complete production-grade SSRF defense.
 - Document OCR remains intentionally not configured and must not be presented as processed successfully.
 - Workflow actions that need external systems remain intentionally disabled until a real adapter exists.
@@ -40,4 +40,4 @@ The Antigravity integration slice contains useful backend building blocks, but i
 
 ## Merge rule
 
-Do not merge PR #66 until the dedicated integration quality gate is green. Even with a green code gate, this PR should remain a **partial integration slice** unless the missing API route/bootstrap wiring is completed or explicitly deferred into the next integration PR.
+Do not merge PR #66 until the dedicated integration quality gate is green. This PR is a narrow v0.1 integration slice. Merge only when backend verification, integration quality, and frontend quality are green for the exact current head.
