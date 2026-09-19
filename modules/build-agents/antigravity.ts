@@ -86,7 +86,6 @@ export class AntigravityBuildAgent implements BuildAgent {
       {
         headers: {
           'x-goog-api-key': this.apiKey,
-          'Api-Revision': '2026-05-20',
         },
       },
     );
