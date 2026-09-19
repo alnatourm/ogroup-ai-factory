@@ -19,52 +19,18 @@ export const GatewayPlaygroundPage: React.FC = () => {
 
   // Chat History
   const [systemPrompt, setSystemPrompt] = useState(
-    'أنت المساعد الذكي السيادي لمنصة «وصل». تجيب دائماً باللغة العربية الفصحى الرصينة، وتلتزم بحفظ سرية المعاملات المؤسسية وفق ضوابط الأمن السيبراني.'
+    'أنت مساعد أعمال عربي. أجب بدقة ولا تدّع تنفيذ أي إجراء أو ضمان غير موصول فعلياً.'
   );
 
-  const [promptInput, setPromptInput] = useState(
-    'قم بتلخيص العقد الاستثماري المرفق واستخراج أطراف الاتفاقية والمبالغ المالية المحددة مع التأكد من مطابقة شروط اللائحة التنفيذية رقم 1445 المعتمدة لدى الوزارة.'
-  );
+  const [promptInput, setPromptInput] = useState('');
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'user',
-      content:
-        'إذا وصل عرض سعر من المورد وكان المبلغ فوق 10000 ريال أرسله للمدير المالي للموافقة، وافحص السجل التجاري.',
-    },
-    {
-      role: 'assistant',
-      content:
-        'أهلاً بك. تم تحليل استعلامك باللغة العربية وبناء هيكل الاستجابة السيادية:\n1. الشرط: فحص قيمة عرض السعر (> 10,000 ريال سعودي).\n2. الإجراء: توجيه طلب الموافقة للمدير المالي مع إرفاق ملخص المعاملة.\n3. التحقق الأمني: تدقيق صحة السجل التجاري وحجب أرقام الهويات والحسابات البنكية تلقائياً بموجب سياسة NDMO.',
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
-  const [latestResponse, setLatestResponse] = useState<GatewayResponse | null>({
-    id: 'chatcmpl_wasl_initial_demo',
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: 'gpt-4o',
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: 'assistant',
-          content:
-            'تمت معالجة الاستعلام الأخير بنجاح عبر بوابة «وصل» للذكاء الاصطناعي السيادي مع الحفاظ على خصوصية الكيانات.',
-        },
-        finish_reason: 'stop',
-      },
-    ],
-    usage: {
-      prompt_tokens: 42,
-      completion_tokens: 68,
-      total_tokens: 110,
-    },
-  });
+  const [latestResponse, setLatestResponse] = useState<GatewayResponse | null>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'formatted' | 'json'>('formatted');
-  const [latencyMs, setLatencyMs] = useState(240);
+  const [latencyMs, setLatencyMs] = useState(0);
   const [copied, setCopied] = useState(false);
 
   const handleSendPrompt = async (e: React.FormEvent) => {
@@ -250,7 +216,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
               {/* System Prompt */}
               <div className="pt-3 border-t border-slate-100">
                 <label className="block text-xs font-semibold text-primary font-arabic mb-1">
-                  {language === 'ar' ? 'توجيه النظام السيادي (System Prompt)' : 'System Prompt'}
+                  {language === 'ar' ? 'توجيه النظام العربي (System Prompt)' : 'System Prompt'}
                 </label>
                 <textarea
                   value={systemPrompt}
@@ -318,7 +284,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
                         <span className="font-bold">
                           {msg.role === 'user'
                             ? language === 'ar' ? 'المستخدم المؤسسي' : 'Enterprise User'
-                            : language === 'ar' ? 'بوابة «وصل» السيادية' : 'Wasl AI Assistant'}
+                            : language === 'ar' ? 'بوابة «وصل» العربية' : 'Wasl AI Assistant'}
                         </span>
                       </div>
                       <div
@@ -357,7 +323,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
                   <LoadingSpinner size="sm" label="" />
                   <span className="text-xs text-on-surface-variant font-arabic">
                     {language === 'ar'
-                      ? 'جارٍ توجيه الاستعلام وفحص الكيانات عبر بوابة وصل السيادية...'
+                      ? 'جارٍ توجيه الاستعلام وفحص الكيانات عبر بوابة وصل العربية...'
                       : 'Routing prompt & masking entities via Wasl Sovereign Gateway...'}
                   </span>
                 </div>

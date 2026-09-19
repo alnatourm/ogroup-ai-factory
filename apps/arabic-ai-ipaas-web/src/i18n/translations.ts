@@ -2,9 +2,9 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
   ar: {
     // Brand & App Bar
     'brand.name': 'وصل للذكاء الاصطناعي',
-    'brand.tagline': 'منصة التكامل والأتمتة السيادية للذكاء الاصطناعي',
-    'brand.sovereignBadge': 'بيئة الإنتاج السيادية - الرياض (KSA Sovereign)',
-    'brand.complianceBadge': 'معتمد بموجب الإطار الوطني لحوكمة الذكاء الاصطناعي (NDMO)',
+    'brand.tagline': 'طبقة التكامل والأتمتة العربية للذكاء الاصطناعي',
+    'brand.sovereignBadge': 'بيئة مرحلية — القدرات تعتمد على الإعداد الفعلي',
+    'brand.complianceBadge': 'ضوابط سياسة قابلة للتحقق — دون ادعاء اعتماد',
 
     // Navigation
     'nav.workspaceOnboarding': 'إعداد مساحة العمل',
@@ -50,7 +50,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     'security.noticeTitle': 'سياسة أمان المفاتيح والاعتمادات المشددة',
     'security.noticeDescription':
       'تلتزم المنصة بعدم إظهار أو كشف المفاتيح السرية بعد حفظها. يتم تشفير كافة الاعتمادات بواسطة وحدات التشفير المادية (HSM/KMS) ولا تظهر إطلاقاً في الواجهات أو السجلات.',
-    'security.secretStored': 'مفتاح الاعتماد مشفر في الخزينة السيادية (Ciphertext Only)',
+    'security.secretStored': 'مفتاح الاعتماد مشفر في الخزينة العربية (Ciphertext Only)',
     'security.enterKey': 'أدخل المفتاح السري للاعتماد',
     'security.keyPlaceholder': '••••••••••••••••••••••••••••••••',
 
@@ -60,23 +60,23 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
 
     // Data Policy
     'policy.privateTitle': 'المستوى 1: سياسة البيانات الخاصة المعزولة كلياً (Strict Private)',
-    'policy.privateDesc': 'حظر كامل لتخزين أي بيانات خارج حدود المعالجة الفورية. لا يتم استخدام أي استفسارات لتحسين النماذج (Zero Data Retention - ZDR).',
+    'policy.privateDesc': 'حظر كامل لتخزين أي بيانات خارج حدود المعالجة الفورية. لا يتم استخدام أي استفسارات لتحسين النماذج (no-retention request (provider verification required)).',
     'policy.telemetryTitle': 'المستوى 2: بيانات القياس عن بُعد المجهولة (Anonymous Telemetry)',
     'policy.telemetryDesc': 'مشاركة مؤشرات تشغيلية مجهولة الهوية مثل زمن الاستجابة وعدد الرموز لمراقبة الموثوقية دون تضمين أي نصوص أو معلومات شخصية.',
     'policy.optInTitle': 'المستوى 3: المشاركة المصرح بها لتحسين النماذج العربية (Improvement Opt-In)',
     'policy.optInDesc': 'موافقة صريحة وموقعة قانونياً للمساهمة في بناء كتل الذكاء الاصطناعي العربية ومعالجة اللهجات، مع تسجيل كافة التراخيص في سجل التدقيق.',
 
     // Empty & Loading States
-    'state.loading': 'جارٍ تحميل البيانات السيادية...',
+    'state.loading': 'جارٍ تحميل البيانات العربية...',
     'state.empty': 'لا توجد بيانات حالياً',
     'state.error': 'حدث خطأ أثناء تحميل البيانات',
   },
   en: {
     // Brand & App Bar
     'brand.name': 'Wasl AI iPaaS',
-    'brand.tagline': 'Sovereign Arabic AI Integration & Automation Platform',
-    'brand.sovereignBadge': 'Sovereign Production - Riyadh (KSA Sovereign)',
-    'brand.complianceBadge': 'Compliant with NDMO National AI Governance',
+    'brand.tagline': 'Arabic AI Integration & Automation Platform',
+    'brand.sovereignBadge': 'Staging — capabilities depend on verified configuration',
+    'brand.complianceBadge': 'Verifiable policy controls — no certification claim',
 
     // Navigation
     'nav.workspaceOnboarding': 'Workspace Onboarding',
@@ -122,7 +122,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     'security.noticeTitle': 'Strict Credential & Secret Security Policy',
     'security.noticeDescription':
       'The platform never echoes back stored API keys after submission. All secrets are encrypted via Hardware Security Modules (HSM/KMS) and never appear in client UI or logs.',
-    'security.secretStored': 'Encrypted in Sovereign Vault (Ciphertext Only)',
+    'security.secretStored': 'Encrypted in Arabic AI Vault (Ciphertext Only)',
     'security.enterKey': 'Enter provider secret API key',
     'security.keyPlaceholder': '••••••••••••••••••••••••••••••••',
 
@@ -131,7 +131,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     'badge.live': 'Live Backend Connected',
 
     // Data Policy
-    'policy.privateTitle': 'Tier 1: Strict Sovereign Private (Zero Data Retention)',
+    'policy.privateTitle': 'Tier 1: Strict Arabic AI Private (Zero Data Retention)',
     'policy.privateDesc': 'Complete prohibition on storing customer content beyond real-time inference. Zero data retention for model learning.',
     'policy.telemetryTitle': 'Tier 2: Anonymous Operational Telemetry',
     'policy.telemetryDesc': 'Aggregated operational metrics such as latency and token counts are shared for reliability monitoring without PII.',

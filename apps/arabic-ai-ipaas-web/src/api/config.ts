@@ -18,7 +18,7 @@ const env = typeof import.meta !== 'undefined'
   : undefined;
 
 const DEFAULT_CONFIG: ApiClientConfig = {
-  baseUrl: envBaseUrl || '/api',
+  baseUrl: envBaseUrl || '',
   workspaceId: env?.VITE_WORKSPACE_ID || '',
   userId: env?.VITE_USER_ID || '',
   role: 'viewer',
