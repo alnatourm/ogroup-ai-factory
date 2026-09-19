@@ -57,7 +57,7 @@ jobs:
             },
             agent_config: {
               type: "antigravity",
-              max_total_tokens: 100000
+              max_total_tokens: 120000
             },
             store: true
           }')"
