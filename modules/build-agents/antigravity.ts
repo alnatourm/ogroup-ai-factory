@@ -1,36 +1,46 @@
+import { GoogleGenAI } from '@google/genai';
 import type { BuildAgent, BuildAgentRequest, BuildAgentRun, BuildAgentStatus } from './types.js';
 
-const DEFAULT_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta';
 const DEFAULT_AGENT = 'antigravity-preview-09-2026';
 
-interface AntigravityResponse {
+interface AntigravityInteraction {
   id?: string;
   environment_id?: string;
   status?: string;
   output_text?: string;
 }
 
+interface AntigravityInteractionsClient {
+  create(
+    input: Record<string, unknown>,
+    options?: { timeout?: number },
+  ): Promise<AntigravityInteraction>;
+  get(interactionId: string): Promise<AntigravityInteraction>;
+}
+
 export interface AntigravityBuildAgentOptions {
   apiKey: string;
-  endpoint?: string;
   agent?: string;
-  fetchImpl?: typeof fetch;
+  client?: AntigravityInteractionsClient;
 }
 
 export class AntigravityBuildAgent implements BuildAgent {
-  private readonly apiKey: string;
-  private readonly endpoint: string;
   private readonly agent: string;
-  private readonly fetchImpl: typeof fetch;
+  private readonly interactions: AntigravityInteractionsClient;
 
   constructor(options: AntigravityBuildAgentOptions) {
     if (!options.apiKey) {
       throw new Error('ANTIGRAVITY_API_KEY_REQUIRED');
     }
-    this.apiKey = options.apiKey;
-    this.endpoint = (options.endpoint ?? DEFAULT_ENDPOINT).replace(/\/$/, '');
+
     this.agent = options.agent ?? DEFAULT_AGENT;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+
+    if (options.client) {
+      this.interactions = options.client;
+    } else {
+      const client = new GoogleGenAI({ apiKey: options.apiKey });
+      this.interactions = client.interactions as unknown as AntigravityInteractionsClient;
+    }
   }
 
   async start(request: BuildAgentRequest): Promise<BuildAgentRun> {
@@ -38,42 +48,31 @@ export class AntigravityBuildAgent implements BuildAgent {
       throw new Error('BUILD_INSTRUCTIONS_REQUIRED');
     }
 
-    const body: Record<string, unknown> = {
-      agent: this.agent,
-      input: request.instructions,
-      environment: request.sources?.length
-        ? {
-            type: 'remote',
-            sources: request.sources.map((source) => ({
-              type: 'inline',
-              target: source.target,
-              content: source.content,
-            })),
-          }
-        : 'remote',
-      background: true,
-      store: true,
-      agent_config: {
-        type: 'antigravity',
-        max_total_tokens: request.maxTotalTokens ?? 50_000,
+    const interaction = await this.interactions.create(
+      {
+        agent: this.agent,
+        input: request.instructions,
+        environment: request.sources?.length
+          ? {
+              type: 'remote',
+              sources: request.sources.map((source) => ({
+                type: 'inline',
+                target: source.target,
+                content: source.content,
+              })),
+            }
+          : 'remote',
+        background: true,
+        store: true,
+        agent_config: {
+          type: 'antigravity',
+          max_total_tokens: request.maxTotalTokens ?? 50_000,
+        },
       },
-    };
+      { timeout: 300_000 },
+    );
 
-    const response = await this.fetchImpl(`${this.endpoint}/interactions`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': this.apiKey,
-        'Api-Revision': '2026-05-20',
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      throw new Error(`ANTIGRAVITY_HTTP_${response.status}`);
-    }
-
-    return this.normalize(await response.json() as AntigravityResponse);
+    return this.normalize(interaction);
   }
 
   async get(interactionId: string): Promise<BuildAgentRun> {
@@ -81,23 +80,10 @@ export class AntigravityBuildAgent implements BuildAgent {
       throw new Error('INTERACTION_ID_REQUIRED');
     }
 
-    const response = await this.fetchImpl(
-      `${this.endpoint}/interactions/${encodeURIComponent(interactionId)}`,
-      {
-        headers: {
-          'x-goog-api-key': this.apiKey,
-        },
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`ANTIGRAVITY_HTTP_${response.status}`);
-    }
-
-    return this.normalize(await response.json() as AntigravityResponse);
+    return this.normalize(await this.interactions.get(interactionId));
   }
 
-  private normalize(response: AntigravityResponse): BuildAgentRun {
+  private normalize(response: AntigravityInteraction): BuildAgentRun {
     if (!response.id) {
       throw new Error('ANTIGRAVITY_RESPONSE_MISSING_ID');
     }
