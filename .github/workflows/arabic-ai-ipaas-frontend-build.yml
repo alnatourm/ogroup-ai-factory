@@ -155,7 +155,26 @@ jobs:
           ENVIRONMENT_ID="${{ steps.build.outputs.environment_id }}"
 
           mkdir -p /tmp/antigravity-snapshot
-          curl --fail-with-body -L -sS --max-time 300             "https://generativelanguage.googleapis.com/v1beta/environments/$ENVIRONMENT_ID/files?alt=media"             -H "x-goog-api-key: $ANTIGRAVITY_API_KEY"             -o /tmp/antigravity-snapshot.tar
+
+          HTTP_CODE="$(curl -L -sS --max-time 300 \
+            -o /tmp/antigravity-snapshot.tar \
+            -w "%{http_code}" \
+            "https://generativelanguage.googleapis.com/v1beta/environments/$ENVIRONMENT_ID/files?alt=media" \
+            -H "x-goog-api-key: $ANTIGRAVITY_API_KEY")"
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            echo "::warning::Current environment-files endpoint returned 404. Trying Google's legacy snapshot endpoint as a compatibility fallback."
+            HTTP_CODE="$(curl -L -sS --max-time 300 \
+              -o /tmp/antigravity-snapshot.tar \
+              -w "%{http_code}" \
+              "https://generativelanguage.googleapis.com/v1beta/files/environment-$ENVIRONMENT_ID:download?alt=media" \
+              -H "x-goog-api-key: $ANTIGRAVITY_API_KEY")"
+          fi
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Unable to download Antigravity sandbox snapshot. HTTP $HTTP_CODE"
+            exit 42
+          fi
 
           tar -xf /tmp/antigravity-snapshot.tar -C /tmp/antigravity-snapshot
 
@@ -184,7 +203,7 @@ jobs:
           cp -R "$WEB_DIR" "$BUILD_TARGET"
 
           mkdir -p factory/status
-          jq -n             --arg productId "arabic-ai-ipaas"             --arg stage "FRONTEND_BUILD"             --arg status "READY_FOR_REVIEW"             --arg interactionId "${{ steps.build.outputs.interaction_id }}"             --arg sourceRun "$GITHUB_RUN_ID"             '{
+          jq -n             --arg productId "arabic-ai-ipaas"             --arg stage "FRONTEND_BUILD"             --arg status "${{ steps.build.outputs.build_status }}"             --arg interactionId "${{ steps.build.outputs.interaction_id }}"             --arg sourceRun "$GITHUB_RUN_ID"             '{
               schemaVersion: 1,
               productId: $productId,
               stage: $stage,
@@ -214,4 +233,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh pr create             --base "$PRODUCT_BASE_BRANCH"             --head "$OUTPUT_BRANCH"             --title "Arabic AI iPaaS: frontend build v0.1"             --body "Autonomous Frontend Build Agent output. Source: Google Antigravity. Target: eight approved Stitch screens. Factory Review/Security/Test gates must pass before merge."             || echo "::warning::Branch was pushed but automatic PR creation was unavailable. The Factory can open it separately."
+          gh pr create             --base "$PRODUCT_BASE_BRANCH"             --head "$OUTPUT_BRANCH"             --title "Arabic AI iPaaS: frontend build v0.1"             --body "Autonomous Frontend Build Agent output. Source: Google Antigravity. Status: ${{ steps.build.outputs.build_status }}. Target: eight approved Stitch screens. Factory Review/Security/Test gates must pass before merge. If PARTIAL_READY, continue from this branch rather than restarting."             || echo "::warning::Branch was pushed but automatic PR creation was unavailable. The Factory can open it separately."
