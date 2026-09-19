@@ -18,59 +18,13 @@ export const DocumentIntelligencePage: React.FC<DocumentIntelligencePageProps> =
 }) => {
   const { language, t } = useI18n();
 
-  const [selectedFile, setSelectedFile] = useState<{ name: string; size: number; type: string } | null>({
-    name: 'عقد_توريد_تقني_مؤسسي_معتمد_KSA_v4.pdf',
-    size: 2457600,
-    type: 'application/pdf',
-  });
+  const [selectedFile, setSelectedFile] = useState<{ name: string; size: number; type: string } | null>(null);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState<'entities' | 'text' | 'json'>('entities');
   const [copied, setCopied] = useState(false);
 
-  // Initial extracted data matching Stitch
-  const [result, setResult] = useState<DocumentExtractionResult | null>({
-    metadata: {
-      id: 'doc_initial_01',
-      filename: 'عقد_توريد_تقني_مؤسسي_معتمد_KSA_v4.pdf',
-      fileSize: 2457600,
-      mimeType: 'application/pdf',
-      uploadedAt: new Date().toISOString(),
-      pageCount: 3,
-      detectedLanguage: 'العربية (Arabic) 99.8%',
-      documentType: 'عقد توريد حلول برمجية وبنية تحتية سيادية',
-      classificationConfidence: 0.994,
-    },
-    fullTextAr:
-      `عقد توريد حلول البنية التحتية والذكاء الاصطناعي السيادي\n` +
-      `المملكة العربية السعودية\n\n` +
-      `إنه في يوم الأحد الموافق 01 رجب 1446هـ تم الاتفاق بين كل من:\n` +
-      `الطرف الأول: وزارة التجارة والذكاء الاصطناعي (المشتري)\n` +
-      `الطرف الثاني: الشركة الوطنية للحلول السحابية المتقدمة (المورد) - س.ت: 1010892341\n` +
-      `الرقم الضريبي: 310294857200003\n\n` +
-      `البند الثالث: القيمة الإجمالية للعقد:\n` +
-      `اتفق الطرفان على أن القيمة الإجمالية لتوريد ونشر رخص منصة الذكاء الاصطناعي هي 4,750,000 ريال سعودي.\n\n` +
-      `البند الرابع: حوكمة البيانات والسرية:\n` +
-      `تلتزم الشركة الموردة بعدم نقل أي بيانات خارج الحدود الجغرافية للمملكة وتطبيق سياسة Zero Data Retention.`,
-    rawMarkdown:
-      `# عقد توريد حلول البنية التحتية والذكاء الاصطناعي السيادي\n\n` +
-      `**الطرف الأول:** وزارة التجارة والذكاء الاصطناعي\n` +
-      `**الطرف الثاني:** الشركة الوطنية للحلول السحابية المتقدمة (س.ت: 1010892341)\n` +
-      `**القيمة المالية:** 4,750,000 ريال سعودي\n` +
-      `**الامتثال السيادي:** مصنف بموجب لوائح NDMO L4`,
-    extractedEntities: [
-      { field: 'party_1', labelAr: 'الطرف الأول (المشتري)', labelEn: 'First Party', value: 'وزارة التجارة والذكاء الاصطناعي', confidence: 0.99 },
-      { field: 'party_2', labelAr: 'الطرف الثاني (المورد)', labelEn: 'Second Party', value: 'الشركة الوطنية للحلول السحابية المتقدمة', confidence: 0.99 },
-      { field: 'cr_number', labelAr: 'رقم السجل التجاري', labelEn: 'CR Number', value: '1010892341', confidence: 0.998 },
-      { field: 'vat_number', labelAr: 'الرقم الضريبي (VAT)', labelEn: 'VAT Number', value: '310294857200003', confidence: 0.999 },
-      { field: 'amount', labelAr: 'القيمة الإجمالية للعقد', labelEn: 'Total Amount', value: '4,750,000 ريال سعودي', confidence: 1.0 },
-      { field: 'effective_date', labelAr: 'تاريخ السريان', labelEn: 'Effective Date', value: '01 رجب 1446هـ', confidence: 0.98 },
-      { field: 'jurisdiction', labelAr: 'النطاق الجغرافي والسيادة', labelEn: 'Jurisdiction', value: 'المملكة العربية السعودية (KSA)', confidence: 1.0 },
-    ],
-    status: 'processed',
-    ocrEngine: 'Wasl Sovereign Multimodal OCR v3.4 (RTL-Native)',
-    piiMaskedCount: 3,
-  });
+  const [result, setResult] = useState<DocumentExtractionResult | null>(null);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -114,7 +68,7 @@ export const DocumentIntelligencePage: React.FC<DocumentIntelligencePageProps> =
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Badge variant="primary" size="md">
-              Wasl Sovereign Multimodal OCR v3.4
+              OCR adapter not configured
             </Badge>
             <Badge variant="success" size="md">
               {language === 'ar' ? 'حفظ ترتيب القراءة RTL' : 'RTL Order Preserved'}
