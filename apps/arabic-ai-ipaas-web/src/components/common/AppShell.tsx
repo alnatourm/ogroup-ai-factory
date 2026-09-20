@@ -171,7 +171,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
           <nav aria-label="مسار التنقل" className="flex items-center gap-2 font-arabic">
             <span className="flex items-center gap-1 text-slate-500">
               <span className="material-symbols-outlined text-[16px]">domain</span>
-              <span>{runtimeWorkspaceId}</span>
+              <span>{runtimeWorkspaceId ? runtimeWorkspaceId.slice(0, 8) + '…' : (language === 'ar' ? 'مساحة العمل الحالية' : 'Current workspace')}</span>
             </span>
             <span className="text-slate-300">/</span>
             <span className="text-primary font-bold">
@@ -251,7 +251,7 @@ export const AppShell: React.FC<AppShellProps> = ({ currentRoute, onNavigate, ch
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs space-y-1 text-slate-600">
             <span className="font-bold block text-slate-800">حدود الأمان الحالية:</span>
             <p>1. المفاتيح المدخلة لا تُسجل إطلاقاً في وحدة التخزين الدائم للمتصفح.</p>
-            <p>2. يتم تمرير الاعتمادات عبر HTTPS فقط بموجب ضوابط الأمان الصارمة.</p>
+            <p>2. تُرسل الاعتمادات إلى نقطة النهاية المكوّنة؛ يجب أن تستخدم بيئة الإنتاج HTTPS صالحاً.</p>
           </div>
         </div>
       </Dialog>
