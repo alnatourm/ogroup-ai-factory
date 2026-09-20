@@ -167,7 +167,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      ZDR Level 4
+                      Private by default
                     </span>
                     <input
                       type="radio"
@@ -188,7 +188,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                 </div>
                 <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-emerald-700 font-semibold flex items-center gap-1 font-arabic">
                   <span className="material-symbols-outlined text-[14px]">lock</span>
-                  <span>{language === 'ar' ? 'الخيار الموصى به للمؤسسات الحكومية' : 'Recommended for Gov / Regulated'}</span>
+                  <span>{language === 'ar' ? 'الخيار الافتراضي الموصى به' : 'Recommended default'}</span>
                 </div>
               </div>
 
@@ -255,12 +255,12 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                   </h4>
                   <p className="text-xs text-on-surface-variant font-arabic leading-relaxed">
                     {language === 'ar'
-                      ? 'موافقة صريحة وموقعة قانونياً للمساهمة في تحسين الذكاء الاصطناعي باللغة العربية وتصحيح اللهجات.'
+                      ? 'اختيار صريح يسمح باستخدام إشارات التحسين المرخّصة فقط، مع تسجيل الموافقة في سجل التدقيق.'
                       : 'Explicit legal consent to contribute filtered Arabic dialect & OCR correction signals.'}
                   </p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-purple-700 font-semibold font-arabic">
-                  {language === 'ar' ? 'يتطلب توقيع CDO & CISO' : 'Requires Dual-Admin Approval'}
+                  {language === 'ar' ? 'يتطلب تأكيداً صريحاً' : 'Requires explicit confirmation'}
                 </div>
               </div>
             </div>
@@ -392,7 +392,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
             <span className="text-xs text-on-surface-variant font-arabic">
               {language === 'ar'
                 ? 'سيتم تفعيل عزل المستأجر وتشفير الاعتمادات فور الضغط على الحفظ.'
-                : 'Tenant isolation and HSM encryption activate upon submission.'}
+                : 'The provider secret is submitted to the encrypted backend store and is never returned to the browser.'}
             </span>
             <Button
               type="submit"
