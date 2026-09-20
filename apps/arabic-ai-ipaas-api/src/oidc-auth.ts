@@ -2,6 +2,7 @@ import express, { type Request, type Response, type Router } from 'express';
 import type { Pool } from 'pg';
 import * as client from 'openid-client';
 import type { BrowserSessionVerifier, VerifiedApiKey } from './auth.js';
+import { recordPendingOidcEnrollment } from './oidc-enrollment.js';
 import { decryptSecret, encryptSecret } from './security.js';
 import type { WorkspaceRole } from './types.js';
 
@@ -87,7 +88,7 @@ function openIdConfigurationFromEnvironment(): OidcConfig | undefined {
   }
   if (sessionSecret!.length < 32) throw new Error('OIDC_SESSION_SECRET_TOO_SHORT');
   return {
-    issuer: issuerUrl.href,
+    issuer: issuer!.trim(),
     clientId: clientId!,
     clientSecret: clientSecret!,
     publicBaseUrl: publicUrl.origin,
@@ -280,7 +281,33 @@ export class OidcAuth implements BrowserSessionVerifier {
         }
         const identity = await this.resolveIdentity(issuer, subject);
         if (!identity) {
-          res.status(403).json({ error: 'OIDC_MEMBERSHIP_NOT_PROVISIONED' });
+          const email = claims?.email;
+          if (typeof email !== 'string' || claims?.email_verified !== true) {
+            res.setHeader('Set-Cookie', clearCookie(TRANSACTION_COOKIE));
+            res.status(403).json({ error: 'OIDC_VERIFIED_EMAIL_REQUIRED' });
+            return;
+          }
+          try {
+            const enrollment = await recordPendingOidcEnrollment(
+              this.pool,
+              {
+                issuer,
+                subject,
+                email,
+                emailVerified: true,
+                ...(typeof claims?.name === 'string' ? { displayName: claims.name } : {}),
+              },
+              this.config.sessionSecret,
+            );
+            res.setHeader('Set-Cookie', clearCookie(TRANSACTION_COOKIE));
+            res.status(403).json({
+              error: 'OIDC_MEMBERSHIP_NOT_PROVISIONED',
+              enrollmentReference: enrollment.reference,
+              expiresAt: enrollment.expiresAt,
+            });
+          } catch {
+            res.status(503).json({ error: 'OIDC_ENROLLMENT_UNAVAILABLE' });
+          }
           return;
         }
         const session: BrowserSession = {
