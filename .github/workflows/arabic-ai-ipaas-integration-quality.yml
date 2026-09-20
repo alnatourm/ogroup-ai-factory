@@ -7,6 +7,7 @@ on:
     paths:
       - 'apps/arabic-ai-ipaas-api/**'
       - 'apps/arabic-ai-ipaas-web/**'
+      - 'products/arabic-ai-ipaas/migrations/**'
       - 'package.json'
       - '.github/workflows/arabic-ai-ipaas-integration-quality.yml'
   workflow_dispatch:
