@@ -49,8 +49,8 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     // Security & Secrets
     'security.noticeTitle': 'سياسة أمان المفاتيح والاعتمادات المشددة',
     'security.noticeDescription':
-      'تلتزم المنصة بعدم إظهار أو كشف المفاتيح السرية بعد حفظها. يتم تشفير كافة الاعتمادات بواسطة وحدات التشفير المادية (HSM/KMS) ولا تظهر إطلاقاً في الواجهات أو السجلات.',
-    'security.secretStored': 'مفتاح الاعتماد مشفر في الخزينة العربية (Ciphertext Only)',
+      'لا تعيد المنصة المفاتيح السرية بعد حفظها. تُخزن الاعتمادات مشفرة في الخادم وفق إعداد مفتاح التشفير، وتبقى محجوبة عن استجابات الواجهة.',
+    'security.secretStored': 'مفتاح الاعتماد محفوظ بشكل مشفر ومحجوب عن الواجهة',
     'security.enterKey': 'أدخل المفتاح السري للاعتماد',
     'security.keyPlaceholder': '••••••••••••••••••••••••••••••••',
 
@@ -60,7 +60,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
 
     // Data Policy
     'policy.privateTitle': 'المستوى 1: سياسة البيانات الخاصة المعزولة كلياً (Strict Private)',
-    'policy.privateDesc': 'حظر كامل لتخزين أي بيانات خارج حدود المعالجة الفورية. لا يتم استخدام أي استفسارات لتحسين النماذج (no-retention request (provider verification required)).',
+    'policy.privateDesc': 'تطلب المنصة عدم استخدام محتوى العميل للتدريب. يجب التحقق من إعدادات الاحتفاظ الفعلية لدى المزود المتصل.',
     'policy.telemetryTitle': 'المستوى 2: بيانات القياس عن بُعد المجهولة (Anonymous Telemetry)',
     'policy.telemetryDesc': 'مشاركة مؤشرات تشغيلية مجهولة الهوية مثل زمن الاستجابة وعدد الرموز لمراقبة الموثوقية دون تضمين أي نصوص أو معلومات شخصية.',
     'policy.optInTitle': 'المستوى 3: المشاركة المصرح بها لتحسين النماذج العربية (Improvement Opt-In)',
@@ -121,8 +121,8 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     // Security & Secrets
     'security.noticeTitle': 'Strict Credential & Secret Security Policy',
     'security.noticeDescription':
-      'The platform never echoes back stored API keys after submission. All secrets are encrypted via Hardware Security Modules (HSM/KMS) and never appear in client UI or logs.',
-    'security.secretStored': 'Encrypted in Arabic AI Vault (Ciphertext Only)',
+      'The platform never echoes stored API keys after submission. Credentials are encrypted server-side using the configured encryption key and remain redacted from API responses.',
+    'security.secretStored': 'Encrypted server-side and redacted from the UI',
     'security.enterKey': 'Enter provider secret API key',
     'security.keyPlaceholder': '••••••••••••••••••••••••••••••••',
 
@@ -132,7 +132,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
 
     // Data Policy
     'policy.privateTitle': 'Tier 1: Strict Arabic AI Private (Zero Data Retention)',
-    'policy.privateDesc': 'Complete prohibition on storing customer content beyond real-time inference. Zero data retention for model learning.',
+    'policy.privateDesc': 'Customer content is not used for training by default. Actual retention behavior must be verified for the connected provider.',
     'policy.telemetryTitle': 'Tier 2: Anonymous Operational Telemetry',
     'policy.telemetryDesc': 'Aggregated operational metrics such as latency and token counts are shared for reliability monitoring without PII.',
     'policy.optInTitle': 'Tier 3: Arabic AI Improvement Opt-In',
