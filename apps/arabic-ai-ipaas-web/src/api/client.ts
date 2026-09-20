@@ -555,57 +555,21 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Get Usage & SLA Metrics
+   * Get truthful usage and reliability metrics from the live control API.
    */
   static async getUsageSummary(): Promise<{ summary: UsageSummary; providers: ProviderMetric[] }> {
-    requireMockFallback();
-    return {
-      summary: {
-        totalRequests: 248920,
-        totalTokens: 184500210,
-        activeWorkflows: 14,
-        processedDocuments: 1820,
-        successRate: 99.82,
-        avgLatencyMs: 412,
-        errorRate: 0.08,
-      },
-      providers: [
-        {
-          providerId: 'p1',
-          providerName: 'بوابة Azure OpenAI السيادية (KSA)',
-          model: 'gpt-4o',
-          status: 'active',
-          requestCount: 164200,
-          successRate: 99.91,
-          avgLatencyMs: 380,
-          p99LatencyMs: 820,
-          tokenCount: 122000000,
-        },
-        {
-          providerId: 'p2',
-          providerName: 'Google Cloud Vertex AI Enterprise',
-          model: 'gemini-1.5-pro',
-          status: 'active',
-          requestCount: 62400,
-          successRate: 99.85,
-          avgLatencyMs: 440,
-          p99LatencyMs: 910,
-          tokenCount: 48500000,
-        },
-        {
-          providerId: 'p3',
-          providerName: 'Anthropic Claude 3.5 Sonnet Gateway',
-          model: 'claude-3-5-sonnet',
-          status: 'degraded',
-          requestCount: 22320,
-          successRate: 98.40,
-          avgLatencyMs: 620,
-          p99LatencyMs: 1450,
-          tokenCount: 14000210,
-        },
-      ],
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/usage/summary`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`USAGE_SUMMARY_LOAD_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as {
+      data: { summary: UsageSummary; providers: ProviderMetric[] };
     };
+    return body.data;
   }
 
   /**
