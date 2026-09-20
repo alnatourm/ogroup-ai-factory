@@ -36,9 +36,6 @@ export const ProviderConnectionsPage: React.FC = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Test connection feedback state
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null);
 
   const fetchProviders = async () => {
     setIsLoading(true);
@@ -100,27 +97,6 @@ export const ProviderConnectionsPage: React.FC = () => {
     }
   };
 
-  const handleTestConnection = async (provider: SafeProviderConnection) => {
-    setTestingId(provider.id);
-    setTestResult(null);
-    try {
-      // Simulate/trigger test ping
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      setTestResult({
-        id: provider.id,
-        success: true,
-        message: language === 'ar' ? 'الاتصال سليم واستجاب في 280ms' : 'Healthy connection, latency 280ms',
-      });
-    } catch {
-      setTestResult({
-        id: provider.id,
-        success: false,
-        message: language === 'ar' ? 'فشل الاتصال بالمزود' : 'Connection failed',
-      });
-    } finally {
-      setTestingId(null);
-    }
-  };
 
   const filteredProviders = providers.filter((p) => {
     const matchesSearch =
@@ -150,8 +126,8 @@ export const ProviderConnectionsPage: React.FC = () => {
           </h1>
           <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
             {language === 'ar'
-              ? 'إدارة البوابات والربط السحابي لشبكات LLM مع ضمانات عدم تسريب البيانات وحماية المفاتيح عبر أجهزة التشفير المادية.'
-              : 'Manage and integrate LLM model gateways with hardware-backed encryption and zero secret leaks.'}
+              ? 'إدارة اتصالات نماذج LLM مع إبقاء الاعتمادات محجوبة عن استجابات API والواجهة.'
+              : 'Manage LLM connections while keeping stored credentials redacted from API responses and the UI.'}
           </p>
         </div>
 
@@ -216,7 +192,7 @@ export const ProviderConnectionsPage: React.FC = () => {
               <option value="openai-compatible">OpenAI-Compatible</option>
               <option value="gemini">Google Vertex AI / Gemini</option>
               <option value="anthropic-compatible">Anthropic Claude</option>
-              <option value="custom-http">Custom / Sovereign LLM</option>
+              <option value="custom-http">Custom HTTP</option>
             </select>
           </div>
         </CardBody>
@@ -299,33 +275,9 @@ export const ProviderConnectionsPage: React.FC = () => {
                   </Badge>
                 </div>
 
-                {testResult && testResult.id === provider.id && (
-                  <div
-                    className={`p-2.5 rounded-lg text-xs font-arabic flex items-center gap-2 ${
-                      testResult.success
-                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        : 'bg-rose-50 text-rose-800 border border-rose-200'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">
-                      {testResult.success ? 'check_circle' : 'error'}
-                    </span>
-                    <span>{testResult.message}</span>
-                  </div>
-                )}
               </CardBody>
 
               <div className="p-4 bg-slate-50 border-t border-slate-100 rounded-b-xl flex items-center justify-between gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  icon="sync"
-                  isLoading={testingId === provider.id}
-                  onClick={() => handleTestConnection(provider)}
-                >
-                  {t('action.testConnection')}
-                </Button>
-
                 <Button
                   variant="ghost"
                   size="sm"
@@ -374,7 +326,7 @@ export const ProviderConnectionsPage: React.FC = () => {
               { value: 'openai-compatible', label: 'OpenAI-Compatible (Azure, OpenAI, Groq)' },
               { value: 'gemini', label: 'Google Cloud Vertex AI / Gemini' },
               { value: 'anthropic-compatible', label: 'Anthropic Claude' },
-              { value: 'custom-http', label: 'Custom HTTP / Local Sovereign Model' },
+              { value: 'custom-http', label: 'Custom HTTP / Local Model' },
             ]}
           />
 
