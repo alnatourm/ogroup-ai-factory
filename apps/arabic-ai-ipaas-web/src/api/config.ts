@@ -3,7 +3,7 @@ export interface ApiClientConfig {
   workspaceId: string;
   apiKey?: string | undefined;
   userId: string;
-  role: 'workspace_owner' | 'workspace_admin' | 'developer' | 'automation_builder' | 'viewer';
+  role: 'workspace_owner' | 'workspace_admin' | 'developer' | 'automation_builder' | 'viewer' | 'partner_admin';
   useMockFallback: boolean;
   allowDevIdentityHeaders: boolean;
 }
