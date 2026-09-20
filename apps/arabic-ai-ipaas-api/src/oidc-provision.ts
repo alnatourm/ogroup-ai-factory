@@ -58,7 +58,11 @@ export function normalizeProvisioningInput(input: OidcProvisioningInput): OidcPr
   }
 
   const subject = required(input.subject, 'OIDC_PROVISION_SUBJECT_REQUIRED');
-  if (subject.length > 512 || /[\u0000-\u001f\u007f]/u.test(subject)) {
+  const hasControlCharacter = [...subject].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && (codePoint < 32 || codePoint === 127);
+  });
+  if (subject.length > 512 || hasControlCharacter) {
     throw new Error('OIDC_PROVISION_SUBJECT_INVALID');
   }
 
