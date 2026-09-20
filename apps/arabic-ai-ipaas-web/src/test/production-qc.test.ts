@@ -60,16 +60,27 @@ describe('production QC API contracts', () => {
     expect(runs[0]?.stepRuns[0]?.outputPayload).toEqual({ maskedCount: 1 });
   });
 
-  it('registers document metadata and reports an unconfigured OCR worker truthfully', async () => {
+  it('uploads real document bytes before reporting an unconfigured OCR worker truthfully', async () => {
+    const bytes = new Uint8Array(512);
+    bytes.set(new TextEncoder().encode('%PDF-1.7'));
+    const file = new File([bytes], 'invoice.pdf', { type: 'application/pdf' });
     const document = {
       id: 'document-1',
       workspaceId: 'workspace-1',
       filename: 'invoice.pdf',
       mediaType: 'application/pdf',
       objectKey: 'documents/workspace-1/document-1/invoice.pdf',
-      sizeBytes: 512,
+      sizeBytes: file.size,
       status: 'processing',
       createdAt: '2026-09-20T00:00:00.000Z',
+    };
+    const upload = {
+      workspaceId: 'workspace-1',
+      documentId: 'document-1',
+      mediaType: 'application/pdf',
+      sizeBytes: file.size,
+      sha256: 'a'.repeat(64),
+      uploadedAt: '2026-09-20T00:00:01.000Z',
     };
     const extraction = {
       id: 'extraction-1',
@@ -78,12 +89,16 @@ describe('production QC API contracts', () => {
       schemaVersion: 'document-extraction-json-v1',
       status: 'processing',
       errorMessage: 'OCR_ENGINE_NOT_CONFIGURED',
-      createdAt: '2026-09-20T00:00:00.000Z',
+      createdAt: '2026-09-20T00:00:02.000Z',
     };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: { ...document, status: 'uploaded' },
-        uploadConfigured: false,
+        uploadConfigured: true,
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: upload,
+        uploadConfigured: true,
       }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         data: { document, extraction, configured: false },
@@ -91,14 +106,17 @@ describe('production QC API contracts', () => {
       }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await ArabicAiIpaasClient.processDocument({
-      name: 'invoice.pdf',
-      size: 512,
-      type: 'application/pdf',
-    });
+    const result = await ArabicAiIpaasClient.processDocument(file);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.uploadConfigured).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]?.[0]).toMatch(/\/v1\/documents\/document-1\/content$/);
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(expect.objectContaining({
+      method: 'PUT',
+      body: file,
+      credentials: 'same-origin',
+    }));
+    expect(result.uploadConfigured).toBe(true);
+    expect(result.upload.sha256).toBe('a'.repeat(64));
     expect(result.workerState).toBe('not_configured');
     expect(result.extraction.status).toBe('processing');
   });
