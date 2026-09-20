@@ -22,7 +22,7 @@ export const DocumentIntelligencePage: React.FC = () => {
     setError(null);
     setIsProcessing(true);
     try {
-      setJob(await ArabicAiIpaasClient.processDocument(metadata));
+      setJob(await ArabicAiIpaasClient.processDocument(file));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED');
     } finally {
@@ -42,7 +42,7 @@ export const DocumentIntelligencePage: React.FC = () => {
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="primary" size="md">
-            {language === 'ar' ? 'تسجيل المستند متصل بالواجهة البرمجية' : 'Live document registration'}
+            {language === 'ar' ? 'رفع المستند متصل بالواجهة البرمجية' : 'Live document upload'}
           </Badge>
           <Badge variant="warning" size="md">
             {language === 'ar' ? 'محول OCR غير مهيأ' : 'OCR adapter not configured'}
@@ -53,15 +53,15 @@ export const DocumentIntelligencePage: React.FC = () => {
         </h1>
         <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
           {language === 'ar'
-            ? 'يسجل الإصدار الحالي بيانات المستند ويطلب مهمة الاستخراج بأمان. رفع محتوى الملف وتشغيل OCR سيبقيان غير متاحين حتى ربط محول تخزين وعامل OCR حقيقي.'
-            : 'This version safely registers document metadata and requests an extraction job. File-byte upload and OCR remain unavailable until real storage and OCR adapters are connected.'}
+            ? 'يرفع الإصدار الحالي محتوى المستند بعد التحقق من النوع والحجم والبصمة الرقمية، ثم يطلب مهمة الاستخراج بأمان. سيبقى OCR غير متاح حتى ربط عامل حقيقي.'
+            : 'This version uploads document bytes after validating type, size, signature, and digest, then safely requests extraction. OCR remains unavailable until a real worker is connected.'}
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card>
           <CardHeader
-            title={language === 'ar' ? 'تسجيل مستند' : 'Register document'}
+            title={language === 'ar' ? 'رفع مستند' : 'Upload document'}
             subtitle={language === 'ar' ? 'PDF أو PNG أو JPEG أو TIFF — حتى 25 ميجابايت' : 'PDF, PNG, JPEG, or TIFF — up to 25 MB'}
           />
           <CardBody className="space-y-4">
@@ -71,10 +71,10 @@ export const DocumentIntelligencePage: React.FC = () => {
                 <span className="material-symbols-outlined text-[26px]">description</span>
               </div>
               <span className="text-xs font-bold text-primary font-arabic">
-                {language === 'ar' ? 'اختر ملفاً لتسجيل المهمة' : 'Choose a file to register the job'}
+                {language === 'ar' ? 'اختر ملفاً لرفعه وتسجيل المهمة' : 'Choose a file to upload and register'}
               </span>
               <span className="text-[11px] text-slate-500 font-arabic mt-2">
-                {language === 'ar' ? 'لن تُرسل وحدات الملف في هذا الإصدار.' : 'File bytes are not transmitted in this version.'}
+                {language === 'ar' ? 'تُرفع وحدات الملف بعد التحقق الأمني؛ لا يتم عرض المحتوى أو تسجيله في السجلات.' : 'File bytes are uploaded after security validation; content is never returned or written to audit logs.'}
               </span>
             </label>
 
@@ -85,7 +85,7 @@ export const DocumentIntelligencePage: React.FC = () => {
                 {isProcessing && (
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <LoadingSpinner size="sm" label="" />
-                    <span>{language === 'ar' ? 'جارٍ تسجيل المهمة...' : 'Registering job...'}</span>
+                    <span>{language === 'ar' ? 'جارٍ التحقق والرفع وتسجيل المهمة...' : 'Validating, uploading, and registering...'}</span>
                   </div>
                 )}
               </div>
@@ -93,7 +93,7 @@ export const DocumentIntelligencePage: React.FC = () => {
 
             {error && (
               <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-xs font-arabic">
-                {language === 'ar' ? 'تعذر تسجيل المهمة: ' : 'Job registration failed: '}{error}
+                {language === 'ar' ? 'تعذر رفع المستند: ' : 'Document upload failed: '}{error}
               </div>
             )}
           </CardBody>
@@ -115,12 +115,12 @@ export const DocumentIntelligencePage: React.FC = () => {
                   <div className={`p-4 rounded-xl border ${job.workerState === 'not_configured' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}>
                     <div className="font-bold text-sm">
                       {job.workerState === 'not_configured'
-                        ? (language === 'ar' ? 'تم تسجيل بيانات المستند، لكن OCR غير مهيأ.' : 'Document metadata registered; OCR is not configured.')
+                        ? (language === 'ar' ? 'تم رفع محتوى المستند والتحقق منه، لكن OCR غير مهيأ.' : 'Document content uploaded and verified; OCR is not configured.')
                         : (language === 'ar' ? 'تم تسجيل المهمة وهي قيد المعالجة.' : 'The job is registered and processing.')}
                     </div>
                     <div className="text-xs mt-2">
                       {job.uploadConfigured
-                        ? (language === 'ar' ? 'رفع المحتوى مهيأ.' : 'Content upload is configured.')
+                        ? (language === 'ar' ? 'تم رفع المحتوى والتحقق من بصمته الرقمية.' : 'Content was uploaded and its digest verified.')
                         : (language === 'ar' ? 'لم يتم رفع محتوى الملف؛ تم تسجيل البيانات الوصفية فقط.' : 'File content was not uploaded; metadata only was registered.')}
                     </div>
                   </div>
@@ -141,6 +141,10 @@ export const DocumentIntelligencePage: React.FC = () => {
                     <div className="p-3 border border-outline-variant rounded-lg">
                       <dt className="text-slate-500">{language === 'ar' ? 'معرف المستند' : 'Document ID'}</dt>
                       <dd className="font-mono text-primary break-all mt-1">{job.document.id}</dd>
+                    </div>
+                    <div className="p-3 border border-outline-variant rounded-lg sm:col-span-2">
+                      <dt className="text-slate-500">{language === 'ar' ? 'بصمة المحتوى SHA-256' : 'Content SHA-256'}</dt>
+                      <dd className="font-mono text-primary break-all mt-1">{job.upload.sha256}</dd>
                     </div>
                   </dl>
 

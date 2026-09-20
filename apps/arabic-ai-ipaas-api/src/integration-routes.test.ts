@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
+import { MemoryAuditRepository } from './audit-service.js';
 
 const ownerA = {
   'x-workspace-id': 'workspace-a',
@@ -94,22 +95,51 @@ describe('Arabic AI iPaaS integration routes', () => {
     expect(otherWorkspace.body.data.optInConfirmed).toBe(false);
   });
 
-  it('exposes a truthful document extraction seam when OCR is not configured', async () => {
+  it('uploads verified bytes with tenant isolation before exposing the truthful OCR seam', async () => {
     const previous = process.env.OCR_WORKER_ENABLED;
     delete process.env.OCR_WORKER_ENABLED;
     try {
-      const app = testApp();
+      const auditRepository = new MemoryAuditRepository();
+      const app = createApp({
+        masterKey: 'route-test-master-key',
+        allowInsecureTestHeaders: true,
+        auditRepository,
+      });
+      const pdf = Buffer.alloc(128);
+      pdf.write('%PDF-private-customer-content', 'ascii');
+
       const created = await request(app)
         .post('/v1/documents')
         .set(ownerA)
-        .send({ filename: 'invoice.pdf', mediaType: 'application/pdf', sizeBytes: 2048 });
+        .send({ filename: 'invoice.pdf', mediaType: 'application/pdf', sizeBytes: pdf.length });
 
       expect(created.status).toBe(201);
-      expect(created.body.uploadConfigured).toBe(false);
+      expect(created.body.uploadConfigured).toBe(true);
       const documentId = created.body.data.id as string;
 
-      const hiddenFromOtherWorkspace = await request(app).get(`/v1/documents/${documentId}`).set(ownerB);
+      const extractionBeforeUpload = await request(app)
+        .post(`/v1/documents/${documentId}/extractions`)
+        .set(ownerA)
+        .send({});
+      expect(extractionBeforeUpload.status).toBe(409);
+      expect(extractionBeforeUpload.body.error).toBe('DOCUMENT_CONTENT_REQUIRED');
+
+      const hiddenFromOtherWorkspace = await request(app)
+        .put(`/v1/documents/${documentId}/content`)
+        .set(ownerB)
+        .set('Content-Type', 'application/pdf')
+        .send(pdf);
       expect(hiddenFromOtherWorkspace.status).toBe(404);
+
+      const uploaded = await request(app)
+        .put(`/v1/documents/${documentId}/content`)
+        .set(ownerA)
+        .set('Content-Type', 'application/pdf')
+        .send(pdf);
+      expect(uploaded.status).toBe(201);
+      expect(uploaded.body.uploadConfigured).toBe(true);
+      expect(uploaded.body.data.sha256).toMatch(/^[a-f0-9]{64}$/);
+      expect(uploaded.body.data.sizeBytes).toBe(pdf.length);
 
       const queued = await request(app)
         .post(`/v1/documents/${documentId}/extractions`)
@@ -122,10 +152,39 @@ describe('Arabic AI iPaaS integration routes', () => {
       expect(queued.body.data.extraction.status).toBe('processing');
       expect(queued.body.data.extraction.markdown).toBeUndefined();
       expect(queued.body.data.extraction.structuredJson).toBeUndefined();
+
+      const auditJson = JSON.stringify(await auditRepository.list('workspace-a'));
+      expect(auditJson).not.toContain('private-customer-content');
+      expect(auditJson).toContain('document.content_uploaded');
     } finally {
       if (previous === undefined) delete process.env.OCR_WORKER_ENABLED;
       else process.env.OCR_WORKER_ENABLED = previous;
     }
+  });
+
+  it('rejects document bytes that do not match registered size or signature', async () => {
+    const app = testApp();
+    const created = await request(app)
+      .post('/v1/documents')
+      .set(ownerA)
+      .send({ filename: 'invoice.pdf', mediaType: 'application/pdf', sizeBytes: 16 });
+    const documentId = created.body.data.id as string;
+
+    const wrongSize = await request(app)
+      .put(`/v1/documents/${documentId}/content`)
+      .set(ownerA)
+      .set('Content-Type', 'application/pdf')
+      .send(Buffer.from('%PDF-short'));
+    expect(wrongSize.status).toBe(400);
+    expect(wrongSize.body.error).toBe('DOCUMENT_SIZE_MISMATCH');
+
+    const invalidSignature = await request(app)
+      .put(`/v1/documents/${documentId}/content`)
+      .set(ownerA)
+      .set('Content-Type', 'application/pdf')
+      .send(Buffer.alloc(16, 1));
+    expect(invalidSignature.status).toBe(400);
+    expect(invalidSignature.body.error).toBe('DOCUMENT_SIGNATURE_MISMATCH');
   });
 
   it('returns truthful zero usage metrics before any gateway requests', async () => {

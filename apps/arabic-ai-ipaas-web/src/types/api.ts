@@ -257,8 +257,18 @@ export type DocumentExtractionRecord = {
   createdAt: string;
 };
 
+export type DocumentContentMetadata = {
+  workspaceId: string;
+  documentId: string;
+  mediaType: string;
+  sizeBytes: number;
+  sha256: string;
+  uploadedAt: string;
+};
+
 export type DocumentProcessingJob = {
   document: DocumentRecord;
+  upload: DocumentContentMetadata;
   extraction: DocumentExtractionRecord;
   workerState: 'configured' | 'not_configured';
   uploadConfigured: boolean;

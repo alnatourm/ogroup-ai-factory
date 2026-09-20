@@ -82,6 +82,12 @@ function buildHeaders(config = getApiConfig()): Record<string, string> {
   return headers;
 }
 
+function buildBinaryHeaders(mediaType: string, config = getApiConfig()): Record<string, string> {
+  const headers = buildHeaders(config);
+  headers['Content-Type'] = mediaType;
+  return headers;
+}
+
 function requireMockFallback(): void {
   if (!getApiConfig().useMockFallback) {
     throw new Error('Backend capability is unavailable and mock fallback is disabled.');
@@ -428,11 +434,13 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * Register document metadata and request extraction through the live control API.
-   * File bytes are not uploaded by the current v0.1 endpoint.
+   * Register metadata, upload validated bytes, then request extraction.
+   * OCR remains explicitly not configured until a real worker adapter is connected.
    */
-  static async processDocument(file: { name: string; size: number; type: string }): Promise<DocumentProcessingJob> {
+  static async processDocument(file: File): Promise<DocumentProcessingJob> {
     const config = getApiConfig();
+    if (!file.type) throw new Error('UNSUPPORTED_MEDIA_TYPE');
+
     const registrationResponse = await fetch(`${config.baseUrl}/v1/documents`, {
       method: 'POST',
       headers: buildHeaders(config),
@@ -445,6 +453,24 @@ export class ArabicAiIpaasClient {
     }
     const registration = (await registrationResponse.json()) as {
       data: DocumentProcessingJob['document'];
+      uploadConfigured: boolean;
+    };
+
+    const uploadResponse = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(registration.data.id)}/content`,
+      {
+        method: 'PUT',
+        headers: buildBinaryHeaders(file.type, config),
+        credentials: 'same-origin',
+        body: file,
+      },
+    );
+    if (!uploadResponse.ok) {
+      const body = (await uploadResponse.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DOCUMENT_UPLOAD_FAILED_${uploadResponse.status}`);
+    }
+    const upload = (await uploadResponse.json()) as {
+      data: DocumentProcessingJob['upload'];
       uploadConfigured: boolean;
     };
 
@@ -466,12 +492,12 @@ export class ArabicAiIpaasClient {
 
     return {
       document: extraction.data.document,
+      upload: upload.data,
       extraction: extraction.data.extraction,
       workerState: extraction.workerState,
-      uploadConfigured: registration.uploadConfigured,
+      uploadConfigured: upload.uploadConfigured,
     };
   }
-
 
   /**
    * Get truthful usage and reliability metrics from the live control API.

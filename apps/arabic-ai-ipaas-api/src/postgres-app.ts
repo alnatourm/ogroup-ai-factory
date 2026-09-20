@@ -3,6 +3,7 @@ import type { Router } from 'express';
 import { createApp } from './app.js';
 import type { ProviderAdapter } from './provider-adapter.js';
 import type { BrowserSessionVerifier } from './auth.js';
+import { PostgresDocumentContentStore } from './postgres-document-content-store.js';
 import {
   PostgresApiKeyVerifier,
   PostgresAuditRepository,
@@ -35,6 +36,7 @@ export function createPostgresApp(options: {
     dataPolicyRepository: new PostgresDataPolicyRepository(pool),
     auditRepository: new PostgresAuditRepository(pool),
     documentRepository: new PostgresDocumentRepository(pool),
+    documentContentStore: new PostgresDocumentContentStore(pool),
     traceRepository: new PostgresTraceRepository(pool),
     apiKeyVerifier: new PostgresApiKeyVerifier(pool),
     ...(options.browserSessionVerifier ? { browserSessionVerifier: options.browserSessionVerifier } : {}),
