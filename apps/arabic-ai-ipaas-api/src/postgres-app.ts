@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
+import type { Router } from 'express';
 import { createApp } from './app.js';
 import type { ProviderAdapter } from './provider-adapter.js';
+import type { BrowserSessionVerifier } from './auth.js';
 import {
   PostgresApiKeyVerifier,
   PostgresAuditRepository,
@@ -22,6 +24,8 @@ export function createPostgresApp(options: {
   pool: Pool;
   masterKey?: string;
   adapter?: ProviderAdapter;
+  browserSessionVerifier?: BrowserSessionVerifier;
+  publicAuthRouter?: Router;
 }) {
   const { pool } = options;
   return createApp({
@@ -33,6 +37,8 @@ export function createPostgresApp(options: {
     documentRepository: new PostgresDocumentRepository(pool),
     traceRepository: new PostgresTraceRepository(pool),
     apiKeyVerifier: new PostgresApiKeyVerifier(pool),
+    ...(options.browserSessionVerifier ? { browserSessionVerifier: options.browserSessionVerifier } : {}),
+    ...(options.publicAuthRouter ? { publicAuthRouter: options.publicAuthRouter } : {}),
     ...(options.adapter ? { adapter: options.adapter } : {}),
     allowInsecureTestHeaders: false,
   });
