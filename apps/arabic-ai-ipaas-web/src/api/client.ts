@@ -489,12 +489,69 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * List workflow run histories
+   * List workflow run histories from the authenticated workspace API.
    */
   static async listWorkflowRuns(): Promise<WorkflowRun[]> {
-    requireMockFallback();
-    return [...mockWorkflowRuns];
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/workflow-runs`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`WORKFLOW_RUNS_LOAD_FAILED_${response.status}`);
+    }
+
+    type ApiStepRun = {
+      id: string;
+      stepKey: string;
+      stepType: string;
+      status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+      durationMs: number;
+      input?: Record<string, unknown>;
+      output?: Record<string, unknown>;
+      errorMessage?: string;
+    };
+    type ApiWorkflowRun = {
+      id: string;
+      workflowId: string;
+      triggerType: WorkflowRun['triggerType'];
+      status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+      durationMs: number;
+      startedAt: string;
+      stepRuns: ApiStepRun[];
+    };
+
+    const body = (await response.json()) as { data: ApiWorkflowRun[] };
+    return body.data.map((run) => ({
+      id: run.id,
+      workflowId: run.workflowId,
+      workflowName: run.workflowId,
+      triggerType: run.triggerType,
+      status:
+        run.status === 'succeeded'
+          ? 'success'
+          : run.status === 'queued'
+            ? 'pending'
+            : run.status === 'cancelled'
+              ? 'failed'
+              : run.status,
+      startedAt: run.startedAt,
+      durationMs: run.durationMs,
+      stepsCount: run.stepRuns.length,
+      completedSteps: run.stepRuns.filter((step) =>
+        ['succeeded', 'failed', 'skipped'].includes(step.status),
+      ).length,
+      stepRuns: run.stepRuns.map((step) => ({
+        stepId: step.id,
+        stepName: step.stepKey,
+        stepType: step.stepType as WorkflowStepRun['stepType'],
+        status: step.status === 'succeeded' ? 'success' : step.status === 'queued' ? 'running' : step.status,
+        durationMs: step.durationMs,
+        ...(step.input ? { inputPayload: step.input } : {}),
+        ...(step.output ? { outputPayload: step.output } : {}),
+        ...(step.errorMessage ? { errorMessage: step.errorMessage } : {}),
+      })),
+    }));
   }
 
   /**
