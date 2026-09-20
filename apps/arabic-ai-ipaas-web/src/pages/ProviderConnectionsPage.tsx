@@ -137,10 +137,10 @@ export const ProviderConnectionsPage: React.FC = () => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Badge variant="primary" size="md">
-              {language === 'ar' ? 'بوابة BYOAI السيادية' : 'BYOAI Gateway'}
+              {language === 'ar' ? 'بوابة BYOAI' : 'BYOAI Gateway'}
             </Badge>
             <Badge variant="info" size="md">
-              {language === 'ar' ? 'تشفير HSM / KMS' : 'HSM Encrypted'}
+              {language === 'ar' ? 'الأسرار محجوبة عن الواجهة' : 'Secrets redacted from UI'}
             </Badge>
           </div>
           <h1 className="text-xl lg:text-2xl font-bold text-primary font-arabic">
@@ -348,8 +348,8 @@ export const ProviderConnectionsPage: React.FC = () => {
         title={language === 'ar' ? 'إضافة موفر ذكاء اصطناعي جديد' : 'Connect New AI Provider'}
         description={
           language === 'ar'
-            ? 'أدخل بيانات الموفر واعتماد الوصول. سيتم تشفير المفتاح فوراً وتخزينه في الخزينة السيادية.'
-            : 'Enter provider credentials. Secrets are immediately encrypted with sovereign keys.'
+            ? 'أدخل بيانات الموفر واعتماد الوصول. يرسل المفتاح إلى الخادم عبر HTTPS ولا تعيده الواجهة بعد الحفظ.'
+            : 'Enter provider credentials. The secret is sent over HTTPS and is never returned to the UI after storage.'
         }
       >
         <form onSubmit={handleAddProvider} className="space-y-4">
@@ -407,7 +407,7 @@ export const ProviderConnectionsPage: React.FC = () => {
             type="password"
             value={newApiKey}
             onChange={(e) => setNewApiKey(e.target.value)}
-            placeholder="أدخل مفتاح API (سيتم تشفيره فورياً)"
+            placeholder="أدخل مفتاح API؛ لن يظهر مجدداً بعد الحفظ"
             helperText={language === 'ar' ? 'تنبيه: لن يتم إظهار هذا المفتاح مجدداً في الواجهات.' : 'Notice: Stored secrets are never displayed again.'}
             dir="ltr"
             required
@@ -441,7 +441,7 @@ export const ProviderConnectionsPage: React.FC = () => {
       >
         <p className="text-xs text-on-surface-variant font-arabic">
           {language === 'ar'
-            ? 'سيتم مسح اعتمادات التشفير المرتبطة بهذا الموفر من قاعدة البيانات بشكل نهائي.'
+            ? 'سيتم حذف اتصال الموفر ومواد الاعتماد المرتبطة به من مساحة العمل.'
             : 'Stored encryption blobs for this provider will be permanently purged.'}
         </p>
       </Dialog>
