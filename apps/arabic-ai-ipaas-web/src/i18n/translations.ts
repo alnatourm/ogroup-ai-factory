@@ -136,7 +136,7 @@ export const translations: Record<'ar' | 'en', Record<string, string>> = {
     'policy.telemetryTitle': 'Tier 2: Anonymous Operational Telemetry',
     'policy.telemetryDesc': 'Aggregated operational metrics such as latency and token counts are shared for reliability monitoring without PII.',
     'policy.optInTitle': 'Tier 3: Arabic AI Improvement Opt-In',
-    'policy.optInDesc': 'Explicit, legally signed consent to contribute filtered Arabic dialect & OCR correction signals to the proprietary Arabic AI corpus.',
+    'policy.optInDesc': 'Explicit opt-in to use licensed, filtered improvement signals. Customer private content remains excluded unless separately authorized.',
 
     // Empty & Loading States
     'state.loading': 'Loading sovereign data...',
