@@ -67,6 +67,7 @@ let mockDataPolicy: DataPolicyConfig = {
   auditLoggingEnabled: true,
   strictZdrLevel: 4,
   dualAdminApprovalRequired: true,
+  optInConfirmed: false,
   updatedAt: new Date().toISOString(),
 };
 
@@ -608,25 +609,41 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Get Data Policy Configuration
+   * Get the authenticated workspace data policy from the live control API.
    */
   static async getDataPolicy(): Promise<DataPolicyConfig> {
-    requireMockFallback();
-    return { ...mockDataPolicy };
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/data-policy`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`DATA_POLICY_LOAD_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: DataPolicyConfig };
+    return body.data;
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Update Data Policy Configuration
+   * Update the authenticated workspace data policy through the live control API.
    */
-  static async updateDataPolicy(updates: Partial<DataPolicyConfig>): Promise<DataPolicyConfig> {
-    requireMockFallback();
-    mockDataPolicy = {
-      ...mockDataPolicy,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    return { ...mockDataPolicy };
+  static async updateDataPolicy(
+    updates: Partial<Omit<DataPolicyConfig, 'workspaceId' | 'updatedAt'>> & {
+      rightsBasis?: string;
+    },
+  ): Promise<DataPolicyConfig> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/data-policy`, {
+      method: 'PATCH',
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DATA_POLICY_UPDATE_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: DataPolicyConfig };
+    return body.data;
   }
 }
