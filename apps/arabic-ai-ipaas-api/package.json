@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --strict --skipLibCheck src/*.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/railway-server.js",
-    "migrate": "node dist/migrate.js"
+    "migrate": "node dist/migrate.js",
+    "provision:oidc": "node dist/oidc-provision.js"
   },
   "dependencies": {
     "express": "^5.1.0",

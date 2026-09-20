@@ -58,7 +58,10 @@ jobs:
       - name: Unit and PostgreSQL capability tests
         run: npm test -- --run tests/arabic-ai-ipaas-api.test.ts tests/arabic-ai-ipaas-postgres.test.ts
 
+      - name: OIDC authentication and provisioning safety tests
+        run: npm test --workspace @ogroup/arabic-ai-ipaas-api -- --run src/oidc-auth.test.ts src/oidc-provision.test.ts
+
       - name: Record capability summary
         if: always()
         run: |
-          echo "Backend verification exercises the real PostgreSQL 16 service, migration, tenant isolation, API-key verification, secret-redaction/unit behavior, and OpenAI-compatible outbound contract."
+          echo "Backend verification exercises PostgreSQL 16, ordered migrations, tenant isolation, API-key verification, OIDC fail-closed behavior, explicit identity provisioning, redacted audit metadata, secret redaction, and the OpenAI-compatible outbound contract."
