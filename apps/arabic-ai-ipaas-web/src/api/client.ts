@@ -9,6 +9,7 @@ import {
   type ProviderMetric,
   type WorkflowDefinition,
   type WorkflowRun,
+  type WorkflowStepRun,
 } from '../types/api.js';
 import { getApiConfig } from './config.js';
 
