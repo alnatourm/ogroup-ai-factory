@@ -59,4 +59,48 @@ describe('production QC API contracts', () => {
     expect(runs[0]?.completedSteps).toBe(1);
     expect(runs[0]?.stepRuns[0]?.outputPayload).toEqual({ maskedCount: 1 });
   });
+
+  it('registers document metadata and reports an unconfigured OCR worker truthfully', async () => {
+    const document = {
+      id: 'document-1',
+      workspaceId: 'workspace-1',
+      filename: 'invoice.pdf',
+      mediaType: 'application/pdf',
+      objectKey: 'documents/workspace-1/document-1/invoice.pdf',
+      sizeBytes: 512,
+      status: 'processing',
+      createdAt: '2026-09-20T00:00:00.000Z',
+    };
+    const extraction = {
+      id: 'extraction-1',
+      workspaceId: 'workspace-1',
+      documentId: 'document-1',
+      schemaVersion: 'document-extraction-json-v1',
+      status: 'processing',
+      errorMessage: 'OCR_ENGINE_NOT_CONFIGURED',
+      createdAt: '2026-09-20T00:00:00.000Z',
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { ...document, status: 'uploaded' },
+        uploadConfigured: false,
+      }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: { document, extraction, configured: false },
+        workerState: 'not_configured',
+      }), { status: 202, headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await ArabicAiIpaasClient.processDocument({
+      name: 'invoice.pdf',
+      size: 512,
+      type: 'application/pdf',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.uploadConfigured).toBe(false);
+    expect(result.workerState).toBe('not_configured');
+    expect(result.extraction.status).toBe('processing');
+  });
+
 });
