@@ -60,12 +60,12 @@ describe('OIDC identity provisioning', () => {
       values?: unknown[],
     ): Promise<QueryResult<T>> => {
       statements.push({ sql, values });
-      if (sql.includes('from workspaces')) return result([{ id: 'workspace-1' }]) as QueryResult<T>;
-      if (sql.includes('from users')) return result([]) as QueryResult<T>;
-      if (sql.includes('insert into users')) return result([{ id: 'user-1' }]) as QueryResult<T>;
-      if (sql.includes('from oidc_identities')) return result([]) as QueryResult<T>;
-      if (sql.includes('from workspace_members')) return result([]) as QueryResult<T>;
-      return result([]) as QueryResult<T>;
+      if (sql.includes('from workspaces')) return result([{ id: 'workspace-1' }]) as unknown as QueryResult<T>;
+      if (sql.includes('from users')) return result([]) as unknown as QueryResult<T>;
+      if (sql.includes('insert into users')) return result([{ id: 'user-1' }]) as unknown as QueryResult<T>;
+      if (sql.includes('from oidc_identities')) return result([]) as unknown as QueryResult<T>;
+      if (sql.includes('from workspace_members')) return result([]) as unknown as QueryResult<T>;
+      return result([]) as unknown as QueryResult<T>;
     });
     const client = { query, release: vi.fn() } as unknown as PoolClient;
     const pool = { connect: vi.fn().mockResolvedValue(client) } as unknown as Pool;
@@ -93,14 +93,14 @@ describe('OIDC identity provisioning', () => {
       sql: string,
     ): Promise<QueryResult<T>> => {
       statements.push(sql);
-      if (sql.includes('from workspaces')) return result([{ id: 'workspace-1' }]) as QueryResult<T>;
+      if (sql.includes('from workspaces')) return result([{ id: 'workspace-1' }]) as unknown as QueryResult<T>;
       if (sql.includes('from users')) {
-        return result([{ id: 'user-1', status: 'active' }]) as QueryResult<T>;
+        return result([{ id: 'user-1', status: 'active' }]) as unknown as QueryResult<T>;
       }
       if (sql.includes('where issuer = $1 and subject = $2')) {
-        return result([{ user_id: 'different-user' }]) as QueryResult<T>;
+        return result([{ user_id: 'different-user' }]) as unknown as QueryResult<T>;
       }
-      return result([]) as QueryResult<T>;
+      return result([]) as unknown as QueryResult<T>;
     });
     const client = { query, release: vi.fn() } as unknown as PoolClient;
     const pool = { connect: vi.fn().mockResolvedValue(client) } as unknown as Pool;
