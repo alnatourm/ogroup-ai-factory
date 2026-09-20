@@ -2,11 +2,10 @@ import React, { useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { Card, CardHeader, CardBody, CardFooter } from '../components/common/Card.js';
 import { Input } from '../components/common/Input.js';
-import { Select } from '../components/common/Select.js';
 import { Button } from '../components/common/Button.js';
 import { Badge } from '../components/common/Badge.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import { updateApiConfig } from '../api/config.js';
+import { getApiConfig } from '../api/config.js';
 import type { DataPolicyTier, ProviderType } from '../types/api.js';
 
 interface WorkspaceOnboardingPageProps {
@@ -16,19 +15,18 @@ interface WorkspaceOnboardingPageProps {
 export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = ({ onCompleted }) => {
   const { language, t } = useI18n();
 
-  // Workspace details state
-  const [workspaceName, setWorkspaceName] = useState('مساحة عمل هيئة التحول الرقمي والذكاء الاصطناعي');
-  const [slug, setSlug] = useState('gov-digital-ai-ksa');
-  const [region, setRegion] = useState('ksa-central-riyadh');
+  // The authenticated OIDC session is the source of truth for tenant identity.
+  const { workspaceId, role } = getApiConfig();
+  const workspaceName = language === 'ar' ? 'مساحة عمل Arabic AI iPaaS' : 'Arabic AI iPaaS Workspace';
 
   // Policy tier selection
   const [dataPolicy, setDataPolicy] = useState<DataPolicyTier>('PRIVATE');
 
   // Provider configuration state
   const [providerType, setProviderType] = useState<ProviderType>('openai-compatible');
-  const [providerName, setProviderName] = useState('Azure OpenAI');
-  const [baseUrl, setBaseUrl] = useState('https://wasl-sovereign-azure.openai.azure.com/v1');
-  const [modelDefault, setModelDefault] = useState('gpt-4o');
+  const [providerName, setProviderName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [modelDefault, setModelDefault] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
 
@@ -42,10 +40,6 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
     setErrorMessage('');
     setSuccessMessage('');
 
-    if (!workspaceName.trim()) {
-      setErrorMessage(language === 'ar' ? 'يرجى إدخال اسم مساحة العمل.' : 'Please enter workspace name.');
-      return;
-    }
     if (!apiKey.trim()) {
       setErrorMessage(language === 'ar' ? 'يرجى إدخال مفتاح API الخاص بمزود الذكاء الاصطناعي.' : 'Please enter provider API key.');
       return;
@@ -53,10 +47,13 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
 
     setIsSubmitting(true);
     try {
-      // Update runtime workspace configuration
-      updateApiConfig({ workspaceId: slug.trim() || 'workspace-a' });
+      // Persist policy first. If provider creation fails, report the partial result explicitly.
+      await ArabicAiIpaasClient.updateDataPolicy({
+        dataZone: dataPolicy,
+        optInConfirmed: dataPolicy === 'IMPROVEMENT_OPT_IN',
+        ...(dataPolicy === 'IMPROVEMENT_OPT_IN' ? { rightsBasis: 'workspace_owner_explicit_selection' } : {}),
+      });
 
-      // Live-wire: create provider connection through typed API client
       await ArabicAiIpaasClient.createProviderConnection({
         providerType,
         name: providerName,
@@ -64,21 +61,14 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
         modelDefault,
         apiKey: apiKey.trim(),
         config: {
-          region,
           onboardedPolicy: dataPolicy,
         },
       });
 
-      // Update data policy
-      await ArabicAiIpaasClient.updateDataPolicy({
-        workspaceId: slug,
-        dataZone: dataPolicy,
-      });
-
       setSuccessMessage(
         language === 'ar'
-          ? 'تم إنشاء وتهيئة مساحة العمل وربط مزود الذكاء الاصطناعي الأول بنجاح وأمان!'
-          : 'Workspace configured and initial AI provider securely connected!'
+          ? 'تم حفظ سياسة مساحة العمل وربط مزود الذكاء الاصطناعي الأول. لم يتم عرض المفتاح السري أو تخزينه في الواجهة.'
+          : 'Workspace policy saved and the initial AI provider was connected. The secret was not echoed or stored in the UI.'
       );
 
       // Clear the secret key from form state immediately after submission
@@ -102,19 +92,19 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Badge variant="primary" size="md" icon="verified">
-            {language === 'ar' ? 'تهيئة مساحة العمل السيادية v0.1' : 'Sovereign Onboarding v0.1'}
+            {language === 'ar' ? 'تهيئة مساحة العمل v0.2' : 'Workspace Setup v0.2'}
           </Badge>
           <Badge variant="success" size="md">
-            {language === 'ar' ? 'ملف حوكمة تجريبي' : 'Demo Governance Profile'}
+            {language === 'ar' ? 'واجهة API حية' : 'Live API'}
           </Badge>
         </div>
         <h1 className="text-2xl lg:text-3xl font-bold text-primary font-arabic tracking-tight">
-          {language === 'ar' ? 'إعداد مساحة عمل المؤسسة (Workspace Onboarding)' : 'Enterprise Workspace Onboarding'}
+          {language === 'ar' ? 'إعداد مساحة عمل المؤسسة' : 'Enterprise Workspace Setup'}
         </h1>
         <p className="text-sm text-on-surface-variant font-arabic max-w-3xl leading-relaxed">
           {language === 'ar'
-            ? 'قم بتهيئة مساحة العمل المؤسسية، واختيار سياسة الخصوصية وحوكمة البيانات، وربط مزود الذكاء الاصطناعي الأول الخاص بمؤسستك (BYOAI). خصائص التشفير والامتثال تعتمد على التحقق الفعلي من البنية الخلفية والمزود.'
-            : 'Configure your enterprise sovereign workspace, select data governance tiers, and connect your initial BYOAI provider.'}
+            ? 'راجع مساحة العمل المرتبطة بهويتك، واختر سياسة استخدام البيانات، ثم اربط مزود الذكاء الاصطناعي الخاص بمؤسستك (BYOAI).'
+            : 'Review the workspace linked to your identity, choose a data-use policy, and connect your organization’s BYOAI provider.'}
         </p>
       </div>
 
@@ -133,39 +123,26 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
       )}
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        {/* Step 1: Workspace Identity */}
+        {/* Step 1: Verified Workspace Identity */}
         <Card>
           <CardHeader
-            title={language === 'ar' ? '1. بيانات وهوية مساحة العمل' : '1. Workspace Identity & Sovereign Region'}
-            subtitle={language === 'ar' ? 'تحديد اسم ومعرف وبيئة السحابة السيادية للمنشأة' : 'Name, slug, and sovereign deployment region'}
+            title={language === 'ar' ? '1. مساحة العمل المرتبطة بالهوية' : '1. Identity-linked Workspace'}
+            subtitle={language === 'ar' ? 'تُحدد العضوية من جلسة OIDC الموثقة ولا يمكن استبدالها من المتصفح.' : 'Membership comes from the verified OIDC session and cannot be replaced in the browser.'}
           />
           <CardBody className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <Input
-              label={language === 'ar' ? 'اسم مساحة العمل المؤسسية' : 'Workspace Name'}
+              label={language === 'ar' ? 'اسم مساحة العمل' : 'Workspace Name'}
               value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
-              required
+              readOnly
             />
             <Input
-              label={language === 'ar' ? 'المعرّف التقني الفريد (Slug)' : 'Unique Slug'}
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              helperText={language === 'ar' ? 'يُستخدم في مسارات واجهة برمجة التطبيقات وعزل البيانات.' : 'Used in API paths and tenant isolation.'}
+              label={language === 'ar' ? 'معرّف مساحة العمل الموثق' : 'Verified Workspace ID'}
+              value={workspaceId}
+              readOnly
               dir="ltr"
-              required
             />
-            <div className="md:col-span-2">
-              <Select
-                label={language === 'ar' ? 'بيئة النشر والاستضافة السيادية (Sovereign Cloud Region)' : 'Sovereign Cloud Region'}
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                options={[
-                  { value: 'ksa-central-riyadh', label: 'المملكة العربية السعودية - السحابة السيادية المركزية (الرياض)' },
-                  { value: 'ksa-west-jeddah', label: 'المملكة العربية السعودية - المنطقة الغربية (جدة)' },
-                  { value: 'uae-central-abudhabi', label: 'دولة الإمارات العربية المتحدة - السحابة السيادية (أبوظبي)' },
-                  { value: 'mena-isolated-vault', label: 'خزينة محلية معزولة تماماً (Isolated Sovereign Air-Gapped Vault)' },
-                ]}
-              />
+            <div className="md:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900 font-arabic">
+              {language === 'ar' ? `الدور الموثق: ${role}` : `Verified role: ${role}`}
             </div>
           </CardBody>
         </Card>
@@ -190,7 +167,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                      ZDR Level 4
+                      Private by default
                     </span>
                     <input
                       type="radio"
@@ -211,7 +188,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                 </div>
                 <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-emerald-700 font-semibold flex items-center gap-1 font-arabic">
                   <span className="material-symbols-outlined text-[14px]">lock</span>
-                  <span>{language === 'ar' ? 'الخيار الموصى به للمؤسسات الحكومية' : 'Recommended for Gov / Regulated'}</span>
+                  <span>{language === 'ar' ? 'الخيار الافتراضي الموصى به' : 'Recommended default'}</span>
                 </div>
               </div>
 
@@ -278,12 +255,12 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                   </h4>
                   <p className="text-xs text-on-surface-variant font-arabic leading-relaxed">
                     {language === 'ar'
-                      ? 'موافقة صريحة وموقعة قانونياً للمساهمة في تحسين الذكاء الاصطناعي باللغة العربية وتصحيح اللهجات.'
+                      ? 'اختيار صريح يسمح باستخدام إشارات التحسين المرخّصة فقط، مع تسجيل الموافقة في سجل التدقيق.'
                       : 'Explicit legal consent to contribute filtered Arabic dialect & OCR correction signals.'}
                   </p>
                 </div>
                 <div className="mt-4 pt-3 border-t border-slate-200 text-[11px] text-purple-700 font-semibold font-arabic">
-                  {language === 'ar' ? 'يتطلب توقيع CDO & CISO' : 'Requires Dual-Admin Approval'}
+                  {language === 'ar' ? 'يتطلب تأكيداً صريحاً' : 'Requires explicit confirmation'}
                 </div>
               </div>
             </div>
@@ -294,7 +271,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
         <Card>
           <CardHeader
             title={language === 'ar' ? '3. ربط مزود الذكاء الاصطناعي الأول (BYOAI)' : '3. Initial BYOAI Provider Connection'}
-            subtitle={language === 'ar' ? 'أدخل تفاصيل الاعتماد ومفتاح API مع التشفير السيادي الفوري' : 'Bring Your Own AI with instant HSM encryption'}
+            subtitle={language === 'ar' ? 'أدخل تفاصيل الاتصال ومفتاح API؛ سيُرسل السر إلى الخادم ولن تعيده الواجهة.' : 'Enter connection details and an API key; the secret is sent to the server and is never echoed by the UI.'}
           />
           <CardBody className="space-y-5">
             {/* Provider Type Selector */}
@@ -315,21 +292,21 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
                     onClick={() => {
                       setProviderType(p.id);
                       if (p.id === 'openai-compatible') {
-                        setBaseUrl('https://wasl-sovereign-azure.openai.azure.com/v1');
-                        setModelDefault('gpt-4o');
-                        setProviderName('Azure OpenAI السيادي');
+                        setBaseUrl('');
+                        setModelDefault('');
+                        setProviderName('');
                       } else if (p.id === 'gemini') {
-                        setBaseUrl('https://me-central2-aiplatform.googleapis.com/v1');
-                        setModelDefault('gemini-1.5-pro');
-                        setProviderName('Vertex AI Gemini Enterprise');
+                        setBaseUrl('');
+                        setModelDefault('');
+                        setProviderName('');
                       } else if (p.id === 'anthropic-compatible') {
-                        setBaseUrl('https://api.anthropic-sovereign.local/v1');
-                        setModelDefault('claude-3-5-sonnet');
-                        setProviderName('Claude 3.5 Sonnet Gateway');
+                        setBaseUrl('');
+                        setModelDefault('');
+                        setProviderName('');
                       } else {
-                        setBaseUrl('https://llm.internal.sovereign.local/v1');
-                        setModelDefault('falcon-40b-arabic');
-                        setProviderName('النموذج السيادي الداخلي');
+                        setBaseUrl('');
+                        setModelDefault('');
+                        setProviderName('');
                       }
                     }}
                     className={`p-3 rounded-lg border text-center flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
@@ -415,7 +392,7 @@ export const WorkspaceOnboardingPage: React.FC<WorkspaceOnboardingPageProps> = (
             <span className="text-xs text-on-surface-variant font-arabic">
               {language === 'ar'
                 ? 'سيتم تفعيل عزل المستأجر وتشفير الاعتمادات فور الضغط على الحفظ.'
-                : 'Tenant isolation and HSM encryption activate upon submission.'}
+                : 'The provider secret is submitted to the encrypted backend store and is never returned to the browser.'}
             </span>
             <Button
               type="submit"

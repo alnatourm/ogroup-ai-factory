@@ -9,6 +9,7 @@ import {
   type ProviderMetric,
   type WorkflowDefinition,
   type WorkflowRun,
+  type WorkflowStepRun,
 } from '../types/api.js';
 import { getApiConfig } from './config.js';
 
@@ -59,133 +60,6 @@ let mockProviders: SafeProviderConnection[] = [
   },
 ];
 
-let mockDataPolicy: DataPolicyConfig = {
-  workspaceId: 'workspace-a',
-  dataZone: 'PRIVATE',
-  piiMaskingEnabled: true,
-  retentionDays: 90,
-  auditLoggingEnabled: true,
-  strictZdrLevel: 4,
-  dualAdminApprovalRequired: true,
-  updatedAt: new Date().toISOString(),
-};
-
-const mockWorkflowRuns: WorkflowRun[] = [
-  {
-    id: 'RUN-2025-08912',
-    workflowId: 'wf-approval-01',
-    workflowName: 'معالجة وتدقيق عروض أسعار الموردين والتحقق المالي',
-    triggerType: 'webhook',
-    status: 'success',
-    startedAt: new Date(Date.now() - 1000 * 60 * 4).toISOString(),
-    durationMs: 1240,
-    stepsCount: 4,
-    completedSteps: 4,
-    stepRuns: [
-      {
-        stepId: 's1',
-        stepName: 'استقبال المعاملة الحكومية وتدقيق التوقيع',
-        stepType: 'trigger',
-        status: 'success',
-        durationMs: 140,
-        outputPayload: { source: 'Etimad Webhook', payloadSize: '24KB' },
-      },
-      {
-        stepId: 's2',
-        stepName: 'فحص الكيانات وحجب البيانات الحساسة (PII)',
-        stepType: 'pii_masking',
-        status: 'success',
-        durationMs: 320,
-        outputPayload: { maskedCount: 2, fields: ['national_id', 'bank_account'] },
-      },
-      {
-        stepId: 's3',
-        stepName: 'تقييم العرض المالي ومطابقة اللائحة (BYOAI)',
-        stepType: 'llm_transform',
-        status: 'success',
-        durationMs: 650,
-        outputPayload: { status: 'compliant', riskScore: 0.04 },
-      },
-      {
-        stepId: 's4',
-        stepName: 'إشعار المدير المالي وأرشفة السجل السيادي',
-        stepType: 'notification',
-        status: 'success',
-        durationMs: 130,
-        outputPayload: { recipient: 'cfo@org.gov.sa', archiveId: 'ARCH-9902' },
-      },
-    ],
-  },
-  {
-    id: 'RUN-2025-08911',
-    workflowId: 'wf-ocr-contract-02',
-    workflowName: 'استخراج وثائق السجلات التجارية والمطابقة الضريبية',
-    triggerType: 'document_ingest',
-    status: 'success',
-    startedAt: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-    durationMs: 3180,
-    stepsCount: 4,
-    completedSteps: 4,
-    stepRuns: [
-      {
-        stepId: 's1',
-        stepName: 'رفع المستند المشفر بصيغة PDF',
-        stepType: 'trigger',
-        status: 'success',
-        durationMs: 250,
-      },
-      {
-        stepId: 's2',
-        stepName: 'معالجة OCR بالذكاء الاصطناعي مع حفظ الترتيب RTL',
-        stepType: 'llm_transform',
-        status: 'success',
-        durationMs: 2200,
-      },
-      {
-        stepId: 's3',
-        stepName: 'استخراج الأرقام الضريبية ورقم السجل التجاري',
-        stepType: 'pii_masking',
-        status: 'success',
-        durationMs: 450,
-      },
-      {
-        stepId: 's4',
-        stepName: 'المطابقة مع سجلات الهيئة العامة للزكاة والضريبة',
-        stepType: 'archive',
-        status: 'success',
-        durationMs: 280,
-      },
-    ],
-  },
-  {
-    id: 'RUN-2025-08910',
-    workflowId: 'wf-support-routing',
-    workflowName: 'تصنيف استفسارات العملاء باللهجات العربية وتوجيهها',
-    triggerType: 'webhook',
-    status: 'failed',
-    startedAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-    durationMs: 1840,
-    stepsCount: 3,
-    completedSteps: 1,
-    stepRuns: [
-      {
-        stepId: 's1',
-        stepName: 'استقبال الرسالة الواردة',
-        stepType: 'trigger',
-        status: 'success',
-        durationMs: 110,
-      },
-      {
-        stepId: 's2',
-        stepName: 'تحديد اللهجة والتحويل إلى العربية الفصحى (MSA)',
-        stepType: 'llm_transform',
-        status: 'failed',
-        durationMs: 1730,
-        errorMessage: 'انتهت مهلة استجابة مزود الذكاء الاصطناعي الخارجي (Upstream Gateway Timeout)',
-      },
-    ],
-  },
-];
 
 /* Helper to build request headers */
 function buildHeaders(config = getApiConfig()): Record<string, string> {
@@ -488,12 +362,69 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * List workflow run histories
+   * List workflow run histories from the authenticated workspace API.
    */
   static async listWorkflowRuns(): Promise<WorkflowRun[]> {
-    requireMockFallback();
-    return [...mockWorkflowRuns];
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/workflow-runs`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`WORKFLOW_RUNS_LOAD_FAILED_${response.status}`);
+    }
+
+    type ApiStepRun = {
+      id: string;
+      stepKey: string;
+      stepType: string;
+      status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+      durationMs: number;
+      input?: Record<string, unknown>;
+      output?: Record<string, unknown>;
+      errorMessage?: string;
+    };
+    type ApiWorkflowRun = {
+      id: string;
+      workflowId: string;
+      triggerType: WorkflowRun['triggerType'];
+      status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+      durationMs: number;
+      startedAt: string;
+      stepRuns: ApiStepRun[];
+    };
+
+    const body = (await response.json()) as { data: ApiWorkflowRun[] };
+    return body.data.map((run) => ({
+      id: run.id,
+      workflowId: run.workflowId,
+      workflowName: run.workflowId,
+      triggerType: run.triggerType,
+      status:
+        run.status === 'succeeded'
+          ? 'success'
+          : run.status === 'queued'
+            ? 'pending'
+            : run.status === 'cancelled'
+              ? 'failed'
+              : run.status,
+      startedAt: run.startedAt,
+      durationMs: run.durationMs,
+      stepsCount: run.stepRuns.length,
+      completedSteps: run.stepRuns.filter((step) =>
+        ['succeeded', 'failed', 'skipped'].includes(step.status),
+      ).length,
+      stepRuns: run.stepRuns.map((step) => ({
+        stepId: step.id,
+        stepName: step.stepKey,
+        stepType: step.stepType as WorkflowStepRun['stepType'],
+        status: step.status === 'succeeded' ? 'success' : step.status === 'queued' ? 'running' : step.status,
+        durationMs: step.durationMs,
+        ...(step.input ? { inputPayload: step.input } : {}),
+        ...(step.output ? { outputPayload: step.output } : {}),
+        ...(step.errorMessage ? { errorMessage: step.errorMessage } : {}),
+      })),
+    }));
   }
 
   /**
@@ -554,79 +485,59 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Get Usage & SLA Metrics
+   * Get truthful usage and reliability metrics from the live control API.
    */
   static async getUsageSummary(): Promise<{ summary: UsageSummary; providers: ProviderMetric[] }> {
-    requireMockFallback();
-    return {
-      summary: {
-        totalRequests: 248920,
-        totalTokens: 184500210,
-        activeWorkflows: 14,
-        processedDocuments: 1820,
-        successRate: 99.82,
-        avgLatencyMs: 412,
-        errorRate: 0.08,
-      },
-      providers: [
-        {
-          providerId: 'p1',
-          providerName: 'بوابة Azure OpenAI السيادية (KSA)',
-          model: 'gpt-4o',
-          status: 'active',
-          requestCount: 164200,
-          successRate: 99.91,
-          avgLatencyMs: 380,
-          p99LatencyMs: 820,
-          tokenCount: 122000000,
-        },
-        {
-          providerId: 'p2',
-          providerName: 'Google Cloud Vertex AI Enterprise',
-          model: 'gemini-1.5-pro',
-          status: 'active',
-          requestCount: 62400,
-          successRate: 99.85,
-          avgLatencyMs: 440,
-          p99LatencyMs: 910,
-          tokenCount: 48500000,
-        },
-        {
-          providerId: 'p3',
-          providerName: 'Anthropic Claude 3.5 Sonnet Gateway',
-          model: 'claude-3-5-sonnet',
-          status: 'degraded',
-          requestCount: 22320,
-          successRate: 98.40,
-          avgLatencyMs: 620,
-          p99LatencyMs: 1450,
-          tokenCount: 14000210,
-        },
-      ],
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/usage/summary`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`USAGE_SUMMARY_LOAD_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as {
+      data: { summary: UsageSummary; providers: ProviderMetric[] };
     };
+    return body.data;
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Get Data Policy Configuration
+   * Get the authenticated workspace data policy from the live control API.
    */
   static async getDataPolicy(): Promise<DataPolicyConfig> {
-    requireMockFallback();
-    return { ...mockDataPolicy };
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/data-policy`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`DATA_POLICY_LOAD_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: DataPolicyConfig };
+    return body.data;
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Update Data Policy Configuration
+   * Update the authenticated workspace data policy through the live control API.
    */
-  static async updateDataPolicy(updates: Partial<DataPolicyConfig>): Promise<DataPolicyConfig> {
-    requireMockFallback();
-    mockDataPolicy = {
-      ...mockDataPolicy,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
-    return { ...mockDataPolicy };
+  static async updateDataPolicy(
+    updates: Partial<Omit<DataPolicyConfig, 'workspaceId' | 'updatedAt'>> & {
+      rightsBasis?: string;
+    },
+  ): Promise<DataPolicyConfig> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/data-policy`, {
+      method: 'PATCH',
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DATA_POLICY_UPDATE_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: DataPolicyConfig };
+    return body.data;
   }
 }

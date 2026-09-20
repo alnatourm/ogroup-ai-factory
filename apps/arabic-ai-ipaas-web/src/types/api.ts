@@ -95,6 +95,7 @@ export type DataPolicyConfig = {
   auditLoggingEnabled: boolean;
   strictZdrLevel: number;
   dualAdminApprovalRequired: boolean;
+  optInConfirmed: boolean;
   updatedAt: string;
 };
 

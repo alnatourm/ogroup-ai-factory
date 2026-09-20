@@ -14,6 +14,7 @@ export const DataPolicyPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Form states
   const [dataZone, setDataZone] = useState<DataPolicyTier>('PRIVATE');
@@ -48,6 +49,7 @@ export const DataPolicyPage: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    setErrorMessage('');
     try {
       const updated = await ArabicAiIpaasClient.updateDataPolicy({
         dataZone,
@@ -56,12 +58,14 @@ export const DataPolicyPage: React.FC = () => {
         auditLoggingEnabled: auditLogging,
         strictZdrLevel,
         dualAdminApprovalRequired: dualAdmin,
+        optInConfirmed: dataZone === 'IMPROVEMENT_OPT_IN',
+        ...(dataZone === 'IMPROVEMENT_OPT_IN' ? { rightsBasis: 'workspace_owner_explicit_selection' } : {}),
       });
       setPolicy(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2000);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'فشل تحديث سياسة البيانات');
+      setErrorMessage(err instanceof Error ? err.message : (language === 'ar' ? 'فشل تحديث سياسة البيانات' : 'Failed to update data policy'));
     } finally {
       setIsSaving(false);
     }
@@ -74,7 +78,7 @@ export const DataPolicyPage: React.FC = () => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Badge variant="primary" size="md">
-              {language === 'ar' ? 'حوكمة البيانات والسيادة' : 'Data Governance & Sovereignty'}
+              {language === 'ar' ? 'حوكمة البيانات' : 'Data Governance'}
             </Badge>
             <Badge variant="success" size="md">
               Policy Profile
@@ -82,8 +86,8 @@ export const DataPolicyPage: React.FC = () => {
           </div>
           <h1 className="text-xl lg:text-2xl font-bold text-primary font-arabic">
             {language === 'ar'
-              ? 'سياسة وحوكمة البيانات والخصوصية السيادية (Data Policy & Privacy)'
-              : 'Data Policy & Sovereign Privacy'}
+              ? 'سياسة وحوكمة البيانات والخصوصية'
+              : 'Data Policy & Privacy'}
           </h1>
           <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
             {language === 'ar'
@@ -107,9 +111,15 @@ export const DataPolicyPage: React.FC = () => {
           <span className="material-symbols-outlined text-emerald-600 text-[24px]">check_circle</span>
           <p className="text-sm font-semibold font-arabic">
             {language === 'ar'
-              ? 'تم حفظ واعتماد سياسة حوكمة البيانات بنجاح، وسجل التدقيق السيادي محدث.'
-              : 'Data governance policy updated and cryptographically audited!'}
+              ? 'تم حفظ سياسة حوكمة البيانات وتسجيل التغيير في سجل التدقيق.'
+              : 'Data governance policy saved and the change was recorded in the audit log.'}
           </p>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div role="alert" className="p-4 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-sm font-semibold font-arabic">
+          {errorMessage}
         </div>
       )}
 
@@ -122,7 +132,7 @@ export const DataPolicyPage: React.FC = () => {
           {/* Section 1: Sovereign Data Tiers */}
           <Card>
             <CardHeader
-              title={language === 'ar' ? 'مستوى تصنيف البيانات السيادية (Sovereign Tier)' : 'Sovereign Data Tier'}
+              title={language === 'ar' ? 'نطاق استخدام البيانات' : 'Data Usage Tier'}
               subtitle={language === 'ar' ? 'حدد نطاق مشاركة البيانات وفق المتطلبات النظامية لمنشأتك' : 'Select data sharing tier for your organization'}
             />
             <CardBody className="space-y-4">
@@ -139,7 +149,7 @@ export const DataPolicyPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                        ZDR Tier 1
+                        Private by default
                       </span>
                       <input
                         type="radio"
