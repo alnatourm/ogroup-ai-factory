@@ -229,3 +229,37 @@ export type Workspace = {
   dataPolicy: DataPolicyTier;
   createdAt: string;
 };
+
+
+export type DocumentRecord = {
+  id: string;
+  workspaceId: string;
+  filename: string;
+  mediaType: string;
+  objectKey: string;
+  sizeBytes: number;
+  status: 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
+  createdAt: string;
+};
+
+export type DocumentExtractionRecord = {
+  id: string;
+  workspaceId: string;
+  documentId: string;
+  schemaVersion: string;
+  engineVersion?: string;
+  markdown?: string;
+  structuredJson?: Record<string, unknown>;
+  language?: string;
+  pageCount?: number;
+  status: 'processing' | 'ready' | 'failed';
+  errorMessage?: string;
+  createdAt: string;
+};
+
+export type DocumentProcessingJob = {
+  document: DocumentRecord;
+  extraction: DocumentExtractionRecord;
+  workerState: 'configured' | 'not_configured';
+  uploadConfigured: boolean;
+};
