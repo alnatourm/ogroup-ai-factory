@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { createPostgresApp } from './postgres-app.js';
 import { createPostgresPool } from './postgres.js';
+import { OidcAuth } from './oidc-auth.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED');
@@ -16,7 +17,13 @@ if (!Number.isInteger(portValue) || portValue <= 0 || portValue > 65535) {
 }
 
 const pool = createPostgresPool(databaseUrl);
-const app = createPostgresApp({ pool, masterKey });
+const oidcAuth = new OidcAuth(pool);
+const app = createPostgresApp({
+  pool,
+  masterKey,
+  browserSessionVerifier: oidcAuth,
+  publicAuthRouter: oidcAuth.router,
+});
 const frontendPath = fileURLToPath(new URL('../../arabic-ai-ipaas-web/dist', import.meta.url));
 const frontendIndex = join(frontendPath, 'index.html');
 
