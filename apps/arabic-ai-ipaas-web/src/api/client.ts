@@ -1,7 +1,7 @@
 import {
   type CreateProviderInput,
   type DataPolicyConfig,
-  type DocumentExtractionResult,
+  type DocumentProcessingJob,
   type GatewayRequest,
   type GatewayResponse,
   type SafeProviderConnection,
@@ -428,61 +428,50 @@ export class ArabicAiIpaasClient {
   }
 
   /**
-   * [NON-PRODUCTION PLACEHOLDER]
-   * Document Intelligence OCR & entity extraction
+   * Register document metadata and request extraction through the live control API.
+   * File bytes are not uploaded by the current v0.1 endpoint.
    */
-  static async processDocument(file: { name: string; size: number; type: string }): Promise<DocumentExtractionResult> {
-    requireMockFallback();
-    await new Promise((resolve) => setTimeout(resolve, 400));
+  static async processDocument(file: { name: string; size: number; type: string }): Promise<DocumentProcessingJob> {
+    const config = getApiConfig();
+    const registrationResponse = await fetch(`${config.baseUrl}/v1/documents`, {
+      method: 'POST',
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+      body: JSON.stringify({ filename: file.name, mediaType: file.type, sizeBytes: file.size }),
+    });
+    if (!registrationResponse.ok) {
+      const body = (await registrationResponse.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DOCUMENT_REGISTRATION_FAILED_${registrationResponse.status}`);
+    }
+    const registration = (await registrationResponse.json()) as {
+      data: DocumentProcessingJob['document'];
+      uploadConfigured: boolean;
+    };
+
+    const extractionResponse = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(registration.data.id)}/extractions`,
+      { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
+    );
+    if (!extractionResponse.ok) {
+      const body = (await extractionResponse.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DOCUMENT_EXTRACTION_REQUEST_FAILED_${extractionResponse.status}`);
+    }
+    const extraction = (await extractionResponse.json()) as {
+      data: {
+        document: DocumentProcessingJob['document'];
+        extraction: DocumentProcessingJob['extraction'];
+      };
+      workerState: DocumentProcessingJob['workerState'];
+    };
 
     return {
-      metadata: {
-        id: `doc_${Date.now()}`,
-        filename: file.name || 'عقد_توريد_تقني_مؤسسي_معتمد_KSA_v4.pdf',
-        fileSize: file.size || 2457600,
-        mimeType: file.type || 'application/pdf',
-        uploadedAt: new Date().toISOString(),
-        pageCount: 3,
-        detectedLanguage: 'العربية (Arabic) 99.8%',
-        documentType: 'عقد توريد حلول برمجية وبنية تحتية',
-        classificationConfidence: 0.994,
-      },
-      fullTextAr:
-        `عقد توريد حلول البنية التحتية والذكاء الاصطناعي السيادي\n` +
-        `المملكة العربية السعودية\n\n` +
-        `إنه في يوم الأحد الموافق 01 رجب 1446هـ تم الاتفاق بين كل من:\n` +
-        `الطرف الأول: وزارة التجارة والذكاء الاصطناعي (المشتري)\n` +
-        `الطرف الثاني: الشركة الوطنية للحلول السحابية المتقدمة (المورد) - س.ت: 1010892341\n` +
-        `الرقم الضريبي: 310294857200003\n\n` +
-        `البند الثالث: القيمة الإجمالية للعقد:\n` +
-        `اتفق الطرفان على أن القيمة الإجمالية لتوريد ونشر رخص منصة الذكاء الاصطناعي هي 4,750,000 ريال سعودي (أربعة ملايين وسبعمائة وخمسون ألف ريال سعودي).\n\n` +
-        `البند الرابع: حوكمة البيانات والسرية:\n` +
-        `تلتزم الشركة الموردة بعدم نقل أي بيانات خارج الحدود الجغرافية للمملكة، وتطبيق معايير ضوابط الأمن السيبراني الوطنية وسياسة Zero Data Retention.`,
-      rawMarkdown:
-        `# عقد توريد حلول البنية التحتية والذكاء الاصطناعي السيادي\n\n` +
-        `**التاريخ:** 01 رجب 1446هـ  \n` +
-        `**الطرف الأول:** وزارة التجارة والذكاء الاصطناعي  \n` +
-        `**الطرف الثاني:** الشركة الوطنية للحلول السحابية المتقدمة  \n\n` +
-        `| الحقل | القيمة المستخرجة | نسبة الدقة |\n` +
-        `| :--- | :--- | :--- |\n` +
-        `| السجل التجاري | 1010892341 | 99.8% |\n` +
-        `| الرقم الضريبي | 310294857200003 | 99.9% |\n` +
-        `| القيمة الإجمالية | 4,750,000 ر.س | 100% |\n` +
-        `| مستوى تصنيف البيانات | سري للغاية (NDMO Level 4) | 100% |`,
-      extractedEntities: [
-        { field: 'contract_party_1', labelAr: 'الطرف الأول (المشتري)', labelEn: 'First Party', value: 'وزارة التجارة والذكاء الاصطناعي', confidence: 0.99 },
-        { field: 'contract_party_2', labelAr: 'الطرف الثاني (المورد)', labelEn: 'Second Party', value: 'الشركة الوطنية للحلول السحابية المتقدمة', confidence: 0.99 },
-        { field: 'cr_number', labelAr: 'رقم السجل التجاري', labelEn: 'CR Number', value: '1010892341', confidence: 0.998 },
-        { field: 'vat_number', labelAr: 'الرقم الضريبي (VAT)', labelEn: 'VAT Number', value: '310294857200003', confidence: 0.999 },
-        { field: 'contract_amount', labelAr: 'القيمة المالية الإجمالية', labelEn: 'Total Amount', value: '4,750,000 ريال سعودي', confidence: 1.0 },
-        { field: 'contract_date', labelAr: 'تاريخ السريان', labelEn: 'Effective Date', value: '01 رجب 1446هـ', confidence: 0.98 },
-        { field: 'jurisdiction', labelAr: 'النطاق الجغرافي والسيادة', labelEn: 'Jurisdiction', value: 'المملكة العربية السعودية (KSA)', confidence: 1.0 },
-      ],
-      status: 'processed',
-      ocrEngine: 'Wasl Sovereign Multimodal OCR v3.4 (RTL-Native)',
-      piiMaskedCount: 3,
+      document: extraction.data.document,
+      extraction: extraction.data.extraction,
+      workerState: extraction.workerState,
+      uploadConfigured: registration.uploadConfigured,
     };
   }
+
 
   /**
    * Get truthful usage and reliability metrics from the live control API.
