@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { Pool } from 'pg';
 import type {
   DocumentContentMetadata,
@@ -13,7 +14,6 @@ export class PostgresDocumentContentStore implements DocumentContentStore {
     mediaType: string;
     content: Buffer;
   }): Promise<DocumentContentMetadata> {
-    const crypto = await import('node:crypto');
     const sha256 = crypto.createHash('sha256').update(input.content).digest('hex');
     const client = await this.pool.connect();
     try {
