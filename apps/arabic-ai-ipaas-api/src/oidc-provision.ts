@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { createPostgresPool } from './postgres.js';
 import type { WorkspaceRole } from './types.js';
 
@@ -46,7 +46,8 @@ function required(value: string | undefined, code: string): string {
 }
 
 export function normalizeProvisioningInput(input: OidcProvisioningInput): OidcProvisioningInput {
-  const issuerUrl = new URL(required(input.issuer, 'OIDC_PROVISION_ISSUER_REQUIRED'));
+  const issuer = required(input.issuer, 'OIDC_PROVISION_ISSUER_REQUIRED');
+  const issuerUrl = new URL(issuer);
   if (
     issuerUrl.protocol !== 'https:' ||
     issuerUrl.username ||
@@ -87,7 +88,7 @@ export function normalizeProvisioningInput(input: OidcProvisioningInput): OidcPr
   }
 
   return {
-    issuer: issuerUrl.href,
+    issuer,
     subject,
     email,
     ...(displayName ? { displayName } : {}),
@@ -128,17 +129,12 @@ export function provisioningPreview(input: OidcProvisioningInput) {
   };
 }
 
-export async function provisionOidcIdentity(
-  pool: Pool,
+export async function provisionOidcIdentityInTransaction(
+  client: PoolClient,
   input: OidcProvisioningInput,
 ): Promise<OidcProvisioningResult> {
   const normalized = normalizeProvisioningInput(input);
-  const client = await pool.connect();
-
-  try {
-    await client.query('begin');
-
-    const workspace = await client.query<{ id: string }>(
+  const workspace = await client.query<{ id: string }>(
       `select id
          from workspaces
         where slug = $1 and status = 'active'
@@ -262,8 +258,19 @@ export async function provisionOidcIdentity(
       ],
     );
 
+  return { workspaceId, userId, identityCreated, membershipChange, fingerprints };
+}
+
+export async function provisionOidcIdentity(
+  pool: Pool,
+  input: OidcProvisioningInput,
+): Promise<OidcProvisioningResult> {
+  const client = await pool.connect();
+  try {
+    await client.query('begin');
+    const result = await provisionOidcIdentityInTransaction(client, input);
     await client.query('commit');
-    return { workspaceId, userId, identityCreated, membershipChange, fingerprints };
+    return result;
   } catch (error) {
     await client.query('rollback');
     throw error;

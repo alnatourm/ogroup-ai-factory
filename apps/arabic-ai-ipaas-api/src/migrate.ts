@@ -5,7 +5,11 @@ import { createPostgresPool } from './postgres.js';
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED');
 
-const migrations = ['0001_initial.sql', '0002_oidc_identities.sql'];
+const migrations = [
+  '0001_initial.sql',
+  '0002_oidc_identities.sql',
+  '0003_oidc_pending_enrollments.sql',
+];
 const pool = createPostgresPool(databaseUrl);
 
 try {

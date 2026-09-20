@@ -9,7 +9,8 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/railway-server.js",
     "migrate": "node dist/migrate.js",
-    "provision:oidc": "node dist/oidc-provision.js"
+    "provision:oidc": "node dist/oidc-provision.js",
+    "approve:oidc-enrollment": "node dist/oidc-enrollment.js"
   },
   "dependencies": {
     "express": "^5.1.0",
