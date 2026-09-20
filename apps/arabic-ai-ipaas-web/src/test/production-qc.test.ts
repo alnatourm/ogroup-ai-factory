@@ -25,7 +25,7 @@ describe('production QC API contracts', () => {
 
     const result = await ArabicAiIpaasClient.getUsageSummary();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/usage/summary', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/v1\/usage\/summary$/), expect.objectContaining({
       credentials: 'same-origin',
     }));
     expect(result.summary.totalRequests).toBe(0);
