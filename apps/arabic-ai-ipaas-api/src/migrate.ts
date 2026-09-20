@@ -5,15 +5,18 @@ import { createPostgresPool } from './postgres.js';
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL_REQUIRED');
 
-const migrationPath = fileURLToPath(
-  new URL('../../../products/arabic-ai-ipaas/migrations/0001_initial.sql', import.meta.url),
-);
-const migration = await fs.readFile(migrationPath, 'utf8');
+const migrations = ['0001_initial.sql', '0002_oidc_identities.sql'];
 const pool = createPostgresPool(databaseUrl);
 
 try {
-  await pool.query(migration);
-  console.log(JSON.stringify({ event: 'database.migration.applied', migration: '0001_initial.sql' }));
+  for (const name of migrations) {
+    const path = fileURLToPath(
+      new URL(`../../../products/arabic-ai-ipaas/migrations/${name}`, import.meta.url),
+    );
+    const sql = await fs.readFile(path, 'utf8');
+    await pool.query(sql);
+    console.log(JSON.stringify({ event: 'database.migration.applied', migration: name }));
+  }
 } finally {
   await pool.end();
 }

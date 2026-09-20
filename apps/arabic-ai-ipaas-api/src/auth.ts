@@ -21,3 +21,12 @@ export class InMemoryApiKeyVerifier implements ApiKeyVerifier {
     return this.records.get(hashApiKey(rawKey)) ?? null;
   }
 }
+
+
+export interface BrowserSessionVerifier {
+  verify(input: {
+    cookieHeader?: string;
+    method: string;
+    origin?: string;
+  }): Promise<VerifiedApiKey | null>;
+}

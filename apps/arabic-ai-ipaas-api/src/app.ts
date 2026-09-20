@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import express, { type NextFunction, type Request, type Response } from 'express';
-import type { ApiKeyVerifier } from './auth.js';
+import express, { type NextFunction, type Request, type Response, type Router } from 'express';
+import type { ApiKeyVerifier, BrowserSessionVerifier } from './auth.js';
 import { MemoryAuditRepository, type AuditRepository } from './audit-service.js';
 import {
   handleDataPolicyUpdate,
@@ -74,12 +74,30 @@ const VALID_WORKFLOW_STATUSES = new Set(['draft', 'active', 'paused', 'archived'
 
 function buildContextMiddleware(
   apiKeyVerifier: ApiKeyVerifier | undefined,
+  browserSessionVerifier: BrowserSessionVerifier | undefined,
   allowInsecureTestHeaders: boolean,
 ) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const auth = req.header('authorization');
     if (auth?.startsWith('Bearer ') && apiKeyVerifier) {
       const verified = await apiKeyVerifier.verify(auth.slice('Bearer '.length).trim());
+      if (verified) {
+        setContext(req, {
+          workspaceId: verified.workspaceId,
+          userId: verified.userId,
+          role: verified.role,
+        });
+        next();
+        return;
+      }
+    }
+
+    if (browserSessionVerifier) {
+      const verified = await browserSessionVerifier.verify({
+        cookieHeader: req.header('cookie'),
+        method: req.method,
+        origin: req.header('origin'),
+      });
       if (verified) {
         setContext(req, {
           workspaceId: verified.workspaceId,
@@ -170,6 +188,8 @@ export function createApp(options: {
   traceRepository?: TraceRepository;
   adapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
+  browserSessionVerifier?: BrowserSessionVerifier;
+  publicAuthRouter?: Router;
   allowInsecureTestHeaders?: boolean;
 } = {}) {
   const app = express();
@@ -190,10 +210,19 @@ export function createApp(options: {
   app.use(express.json({ limit: '1mb' }));
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.3.0' });
+    res.json({ status: 'ok', service: 'arabic-ai-ipaas-control-api', version: '0.4.0' });
   });
 
-  app.use('/v1', buildContextMiddleware(options.apiKeyVerifier, options.allowInsecureTestHeaders === true));
+  if (options.publicAuthRouter) app.use('/auth', options.publicAuthRouter);
+
+  app.use(
+    '/v1',
+    buildContextMiddleware(
+      options.apiKeyVerifier,
+      options.browserSessionVerifier,
+      options.allowInsecureTestHeaders === true,
+    ),
+  );
 
   app.get('/v1/provider-connections', async (req, res, next) => {
     try {

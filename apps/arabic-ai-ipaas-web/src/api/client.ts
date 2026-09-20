@@ -203,8 +203,6 @@ function buildHeaders(config = getApiConfig()): Record<string, string> {
     headers['x-workspace-id'] = config.workspaceId;
     headers['x-user-id'] = config.userId;
     headers['x-workspace-role'] = config.role;
-  } else {
-    throw new Error('Authentication is required. Configure a runtime API credential or explicitly enable development identity headers.');
   }
 
   return headers;
@@ -217,6 +215,24 @@ function requireMockFallback(): void {
 }
 
 export class ArabicAiIpaasClient {
+  static async getAuthStatus(): Promise<{
+    configured: boolean;
+    authenticated: boolean;
+    session?: {
+      workspaceId: string;
+      userId: string;
+      role: 'workspace_owner' | 'workspace_admin' | 'developer' | 'automation_builder' | 'viewer' | 'partner_admin';
+    };
+  }> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/auth/status`, {
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (!response.ok) throw new Error('Authentication status is unavailable.');
+    return await response.json();
+  }
+
   /**
    * Check control API health
    * Live backend endpoint: GET /health
