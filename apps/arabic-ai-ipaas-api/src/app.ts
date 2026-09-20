@@ -13,6 +13,11 @@ import {
   validateDocumentUpload,
   type DocumentRepository,
 } from './document-service.js';
+import {
+  MemoryDocumentContentStore,
+  validateDocumentContent,
+  type DocumentContentStore,
+} from './document-content-store.js';
 import { MemoryProviderRepository } from './memory-repository.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
@@ -185,6 +190,7 @@ export function createApp(options: {
   dataPolicyRepository?: DataPolicyRepository;
   auditRepository?: AuditRepository;
   documentRepository?: DocumentRepository;
+  documentContentStore?: DocumentContentStore;
   traceRepository?: TraceRepository;
   adapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
@@ -198,6 +204,7 @@ export function createApp(options: {
   const dataPolicyRepository = options.dataPolicyRepository ?? new MemoryDataPolicyRepository();
   const auditRepository = options.auditRepository ?? new MemoryAuditRepository();
   const documentRepository = options.documentRepository ?? new MemoryDocumentRepository();
+  const documentContentStore = options.documentContentStore ?? new MemoryDocumentContentStore();
   const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
   const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
@@ -485,7 +492,7 @@ export function createApp(options: {
         entityId: document.id,
         metadata: { mediaType: document.mediaType, sizeBytes: document.sizeBytes },
       });
-      res.status(201).json({ data: document, uploadConfigured: false });
+      res.status(201).json({ data: document, uploadConfigured: true });
     } catch (error) {
       next(error);
     }
@@ -506,12 +513,57 @@ export function createApp(options: {
     }
   });
 
+  app.put(
+    '/v1/documents/:id/content',
+    requireWorkflowWriteRole,
+    express.raw({ type: () => true, limit: '25mb' }),
+    async (req, res, next) => {
+      try {
+        const context = getContext(req);
+        const documentId = getPathId(req);
+        const document = await documentRepository.get(context.workspaceId, documentId);
+        if (!document) {
+          res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+          return;
+        }
+        const mediaType = (req.header('content-type') ?? '').split(';', 1)[0]?.trim().toLowerCase() ?? '';
+        const validated = validateDocumentContent(document, mediaType, req.body);
+        const stored = await documentContentStore.put({
+          workspaceId: context.workspaceId,
+          documentId,
+          mediaType,
+          content: validated.content,
+        });
+        await auditRepository.record({
+          workspaceId: context.workspaceId,
+          actorUserId: context.userId,
+          actorType: 'user',
+          action: 'document.content_uploaded',
+          entityType: 'document',
+          entityId: documentId,
+          metadata: {
+            mediaType: stored.mediaType,
+            sizeBytes: stored.sizeBytes,
+            sha256: stored.sha256,
+          },
+        });
+        res.status(201).json({ data: stored, uploadConfigured: true });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
   app.post('/v1/documents/:id/extractions', requireWorkflowWriteRole, async (req, res, next) => {
     try {
       const context = getContext(req);
       const documentId = getPathId(req);
       if (!(await documentRepository.get(context.workspaceId, documentId))) {
         res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      if (!(await documentContentStore.has(context.workspaceId, documentId))) {
+        res.status(409).json({ error: 'DOCUMENT_CONTENT_REQUIRED' });
         return;
       }
       const queued = await queueDocumentExtraction(context.workspaceId, documentId, documentRepository);
@@ -631,12 +683,20 @@ export function createApp(options: {
       'INVALID_PROVIDER_BASE_URL',
       'PROVIDER_BASE_URL_MUST_USE_HTTPS',
       'PROVIDER_BASE_URL_NOT_ALLOWED',
+      'DOCUMENT_MEDIA_TYPE_MISMATCH',
+      'DOCUMENT_SIZE_MISMATCH',
+      'DOCUMENT_SIGNATURE_MISMATCH',
+      'INVALID_DOCUMENT_CONTENT',
     ]);
     if (badRequestCodes.has(code)) {
       res.status(400).json({ error: code });
       return;
     }
-    if (code === 'EXPLICIT_OPT_IN_REQUIRED') {
+    if ((error as { type?: string }).type === 'entity.too.large') {
+      res.status(413).json({ error: 'FILE_TOO_LARGE' });
+      return;
+    }
+    if (code === 'EXPLICIT_OPT_IN_REQUIRED' || code === 'DOCUMENT_CONTENT_REQUIRED') {
       res.status(409).json({ error: code });
       return;
     }
