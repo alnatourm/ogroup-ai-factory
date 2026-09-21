@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
@@ -12,6 +12,26 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [job, setJob] = useState<DocumentProcessingJob | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<DocumentRecord[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const refreshHistory = useCallback(async () => {
+    setIsHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      setHistory(await ArabicAiIpaasClient.listDocuments());
+    } catch (caught) {
+      setHistoryError(caught instanceof Error ? caught.message : 'DOCUMENT_HISTORY_LOAD_FAILED');
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -23,11 +43,24 @@ export const DocumentIntelligencePage: React.FC = () => {
     setIsProcessing(true);
     try {
       setJob(await ArabicAiIpaasClient.processDocument(file));
+      await refreshHistory();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED');
     } finally {
       setIsProcessing(false);
       event.target.value = '';
+    }
+  };
+
+  const handleDownload = async (document: DocumentRecord) => {
+    setDownloadingId(document.id);
+    setHistoryError(null);
+    try {
+      await ArabicAiIpaasClient.downloadDocument(document);
+    } catch (caught) {
+      setHistoryError(caught instanceof Error ? caught.message : 'DOCUMENT_DOWNLOAD_FAILED');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -195,6 +228,70 @@ export const DocumentIntelligencePage: React.FC = () => {
           </Card>
         </div>
       </div>
+
+      <Card>
+        <CardHeader
+          title={language === 'ar' ? 'سجل المستندات المحفوظ' : 'Persisted document history'}
+          subtitle={language === 'ar'
+            ? 'مستندات مساحة العمل الحالية فقط؛ التنزيل يتطلب جلسة مصادقاً عليها.'
+            : 'Only documents from the current workspace; downloads require an authenticated session.'}
+        />
+        <CardBody className="space-y-3">
+          {isHistoryLoading ? (
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <LoadingSpinner size="sm" label="" />
+              <span>{language === 'ar' ? 'جارٍ تحميل السجل...' : 'Loading history...'}</span>
+            </div>
+          ) : history.length === 0 ? (
+            <div className="text-xs text-slate-500 font-arabic">
+              {language === 'ar' ? 'لا توجد مستندات محفوظة في مساحة العمل.' : 'No persisted documents in this workspace.'}
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 border border-outline-variant rounded-xl">
+              {history.map((document) => (
+                <div key={document.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <div className="font-semibold text-sm text-primary break-all">{document.filename}</div>
+                    <div className="text-[11px] text-slate-500 font-mono">
+                      {formatFileSize(document.sizeBytes)} · {document.mediaType} · {new Date(document.createdAt).toLocaleString(language === 'ar' ? 'ar-JO' : 'en')}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant={document.status === 'ready' ? 'success' : document.status === 'failed' ? 'danger' : 'neutral'}
+                        size="sm"
+                      >
+                        {document.status}
+                      </Badge>
+                      {document.sha256 && (
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          SHA-256 {document.sha256.slice(0, 12)}…
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownload(document)}
+                    disabled={downloadingId === document.id}
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-secondary text-secondary text-xs font-bold hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">download</span>
+                    {downloadingId === document.id
+                      ? (language === 'ar' ? 'جارٍ التنزيل...' : 'Downloading...')
+                      : (language === 'ar' ? 'تنزيل الأصل' : 'Download original')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {historyError && (
+            <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-xs font-arabic">
+              {language === 'ar' ? 'تعذر تحميل سجل المستندات: ' : 'Document history error: '}{historyError}
+            </div>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 };
