@@ -63,7 +63,7 @@ function sanitizeProviderDiagnostic(value: unknown): string | undefined {
   if (typeof value !== 'string' && typeof value !== 'number') return undefined;
   return String(value)
     .replace(/AIza[A-Za-z0-9_-]+/g, '[redacted]')
-    .replace(/[A-Za-z0-9+/_=-]{64,}/g, '[redacted]')
+    .replace(/[A-Za-z0-9+\/_=-]{64,}/g, '[redacted]')
     .replace(/[\r\n\t]+/g, ' ')
     .slice(0, 300);
 }
