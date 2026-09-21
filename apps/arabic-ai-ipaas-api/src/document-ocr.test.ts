@@ -78,6 +78,36 @@ describe('document OCR adapter', () => {
     expect(requestBody.response_format.schema).toBeTruthy();
   });
 
+  it('logs only sanitized provider diagnostics for rejected requests', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const adapter = new GeminiDocumentOcrAdapter(
+      vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        error: {
+          code: 400,
+          status: 'INVALID_ARGUMENT',
+          message: 'Invalid model; credential AIzaThisMustNeverAppear and payload AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        },
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } })),
+    );
+
+    await expect(adapter.extract({
+      content: Buffer.from('%PDF-1.7'),
+      mediaType: 'application/pdf',
+      filename: 'invoice.pdf',
+      provider: geminiProvider(),
+      secret: 'test-secret',
+    })).rejects.toThrow('OCR_PROVIDER_HTTP_400:INVALID_ARGUMENT');
+
+    const diagnostic = String(consoleSpy.mock.calls[0]?.[0]);
+    expect(diagnostic).toContain('ocr.provider_http_error');
+    expect(diagnostic).toContain('INVALID_ARGUMENT');
+    expect(diagnostic).toContain('[redacted]');
+    expect(diagnostic).not.toContain('AIzaThisMustNeverAppear');
+    expect(diagnostic).not.toContain('A'.repeat(80));
+    expect(diagnostic).not.toContain('test-secret');
+    consoleSpy.mockRestore();
+  });
+
   it('rejects provider responses that do not satisfy the extraction contract', async () => {
     const adapter = new GeminiDocumentOcrAdapter(
       vi.fn().mockResolvedValue(new Response(JSON.stringify({
