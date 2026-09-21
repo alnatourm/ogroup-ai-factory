@@ -19,6 +19,10 @@ export interface DocumentContentStore {
     content: Buffer;
   }): Promise<DocumentContentMetadata>;
   getMetadata(workspaceId: string, documentId: string): Promise<DocumentContentMetadata | undefined>;
+  get(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<{ metadata: DocumentContentMetadata; content: Buffer } | undefined>;
   has(workspaceId: string, documentId: string): Promise<boolean>;
 }
 
@@ -80,6 +84,16 @@ export class MemoryDocumentContentStore implements DocumentContentStore {
 
   async getMetadata(workspaceId: string, documentId: string): Promise<DocumentContentMetadata | undefined> {
     return this.objects.get(`${workspaceId}:${documentId}`)?.metadata;
+  }
+
+  async get(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<{ metadata: DocumentContentMetadata; content: Buffer } | undefined> {
+    const stored = this.objects.get(`${workspaceId}:${documentId}`);
+    return stored
+      ? { metadata: stored.metadata, content: Buffer.from(stored.content) }
+      : undefined;
   }
 
   async has(workspaceId: string, documentId: string): Promise<boolean> {
