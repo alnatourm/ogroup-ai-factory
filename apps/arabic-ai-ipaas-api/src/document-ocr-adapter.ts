@@ -1,7 +1,8 @@
 import type { AcceptedMediaType, ProviderConnection } from './types.js';
 
 export const MAX_INLINE_OCR_BYTES = 10 * 1024 * 1024;
-const MAX_OCR_ATTEMPTS = 3;
+const MAX_OCR_ATTEMPTS = 4;
+const MAX_PROVIDER_RETRY_DELAY_MS = 60_000;
 
 type Sleep = (delayMs: number) => Promise<void>;
 
@@ -9,11 +10,35 @@ function isRetryableProviderStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
-function getRetryDelayMs(response: Response, attempt: number): number {
-  const retryAfterSeconds = Number(response.headers.get('retry-after'));
-  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
-    return Math.min(retryAfterSeconds * 1000, 5_000);
+async function getRetryDelayMs(response: Response, attempt: number): Promise<number> {
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) {
+    const retryAfterSeconds = Number(retryAfter);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return Math.min(retryAfterSeconds * 1000, MAX_PROVIDER_RETRY_DELAY_MS);
+    }
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(retryAt - Date.now(), 0), MAX_PROVIDER_RETRY_DELAY_MS);
+    }
   }
+
+  if (response.status === 429) {
+    try {
+      const body = JSON.parse(await response.clone().text()) as {
+        error?: { message?: unknown };
+      };
+      const message = typeof body.error?.message === 'string' ? body.error.message : '';
+      const retryMatch = message.match(/retry\s+in\s+(\d+(?:\.\d+)?)s/i);
+      const retrySeconds = retryMatch?.[1] ? Number(retryMatch[1]) : Number.NaN;
+      if (Number.isFinite(retrySeconds) && retrySeconds >= 0) {
+        return Math.min(Math.ceil(retrySeconds * 1000), MAX_PROVIDER_RETRY_DELAY_MS);
+      }
+    } catch {
+      // Fall through to bounded exponential backoff.
+    }
+  }
+
   const exponentialDelay = 1_000 * (2 ** (attempt - 1));
   const jitter = Math.floor(Math.random() * 250);
   return Math.min(exponentialDelay + jitter, 5_000);
@@ -218,7 +243,7 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
         await throwProviderHttpError(response, model);
       }
 
-      const delayMs = getRetryDelayMs(response, attempt);
+      const delayMs = await getRetryDelayMs(response, attempt);
       console.warn(JSON.stringify({
         event: 'ocr.provider_retry',
         httpStatus: response.status,
