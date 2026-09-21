@@ -15,8 +15,5 @@ create table if not exists workspace_data_policies (
   opt_in_confirmed boolean not null default false,
   rights_basis text,
   updated_at timestamptz not null default now(),
-  check (
-    data_zone <> 'IMPROVEMENT_OPT_IN'
-    or (opt_in_confirmed = true and rights_basis is not null and length(trim(rights_basis)) > 0)
-  )
+  check (data_zone <> 'IMPROVEMENT_OPT_IN' or opt_in_confirmed = true)
 );
