@@ -128,7 +128,13 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
   constructor(private readonly fetchImpl: FetchLike = fetch) {}
 
   supports(provider: ProviderConnection): boolean {
-    return provider.providerType === 'gemini' && provider.config.documentOcrEnabled === true;
+    if (provider.providerType !== 'gemini' || provider.config.documentOcrEnabled !== true) return false;
+    if (!provider.baseUrl) return true;
+    try {
+      return new URL(provider.baseUrl).hostname.toLowerCase() === 'generativelanguage.googleapis.com';
+    } catch {
+      return false;
+    }
   }
 
   async extract(input: {
