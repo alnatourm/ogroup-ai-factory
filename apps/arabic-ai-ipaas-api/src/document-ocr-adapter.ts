@@ -1,6 +1,23 @@
 import type { AcceptedMediaType, ProviderConnection } from './types.js';
 
 export const MAX_INLINE_OCR_BYTES = 10 * 1024 * 1024;
+const MAX_OCR_ATTEMPTS = 3;
+
+type Sleep = (delayMs: number) => Promise<void>;
+
+function isRetryableProviderStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function getRetryDelayMs(response: Response, attempt: number): number {
+  const retryAfterSeconds = Number(response.headers.get('retry-after'));
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.min(retryAfterSeconds * 1000, 5_000);
+  }
+  const exponentialDelay = 1_000 * (2 ** (attempt - 1));
+  const jitter = Math.floor(Math.random() * 250);
+  return Math.min(exponentialDelay + jitter, 5_000);
+}
 
 export type DocumentOcrEntity = {
   label: string;
@@ -133,7 +150,10 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
 }
 
 export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
-  constructor(private readonly fetchImpl: FetchLike = fetch) {}
+  constructor(
+    private readonly fetchImpl: FetchLike = fetch,
+    private readonly sleep: Sleep = (delayMs) => new Promise((resolve) => setTimeout(resolve, delayMs)),
+  ) {}
 
   supports(provider: ProviderConnection): boolean {
     if (provider.providerType !== 'gemini' || provider.config.documentOcrEnabled !== true) return false;
@@ -159,37 +179,59 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
     const url = new URL('/v1beta/interactions', baseUrl);
     if (url.protocol !== 'https:') throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS');
 
-    const response = await this.fetchImpl(url, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-goog-api-key': input.secret,
-      },
-      signal: AbortSignal.timeout(60_000),
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            type: 'document',
-            data: input.content.toString('base64'),
-            mime_type: input.mediaType,
-          },
-          {
-            type: 'text',
-            text: [
-              'Extract this document faithfully.',
-              'Preserve Arabic right-to-left reading order and document structure in markdown.',
-              'Do not infer missing values. Return only values visibly supported by the document.',
-              'Return only one valid JSON object with no markdown fence and exactly these fields:',
-              'markdown (non-empty string), language (short language code), pageCount (integer 1-1000),',
-              'textDirection (rtl, ltr, or mixed), and entities (array of objects with label, value, confidence from 0 to 1).',
-            ].join(' '),
-          },
-        ],
-      }),
+    const requestBody = JSON.stringify({
+      model,
+      input: [
+        {
+          type: 'document',
+          data: input.content.toString('base64'),
+          mime_type: input.mediaType,
+        },
+        {
+          type: 'text',
+          text: [
+            'Extract this document faithfully.',
+            'Preserve Arabic right-to-left reading order and document structure in markdown.',
+            'Do not infer missing values. Return only values visibly supported by the document.',
+            'Return only one valid JSON object with no markdown fence and exactly these fields:',
+            'markdown (non-empty string), language (short language code), pageCount (integer 1-1000),',
+            'textDirection (rtl, ltr, or mixed), and entities (array of objects with label, value, confidence from 0 to 1).',
+          ].join(' '),
+        },
+      ],
     });
 
-    if (!response.ok) await throwProviderHttpError(response, model);
+    let response: Response | undefined;
+    for (let attempt = 1; attempt <= MAX_OCR_ATTEMPTS; attempt += 1) {
+      response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-goog-api-key': input.secret,
+        },
+        signal: AbortSignal.timeout(60_000),
+        body: requestBody,
+      });
+
+      if (response.ok) break;
+      if (!isRetryableProviderStatus(response.status) || attempt === MAX_OCR_ATTEMPTS) {
+        await throwProviderHttpError(response, model);
+      }
+
+      const delayMs = getRetryDelayMs(response, attempt);
+      console.warn(JSON.stringify({
+        event: 'ocr.provider_retry',
+        httpStatus: response.status,
+        model,
+        attempt,
+        nextAttempt: attempt + 1,
+        delayMs,
+      }));
+      await response.body?.cancel().catch(() => undefined);
+      await this.sleep(delayMs);
+    }
+
+    if (!response?.ok) throw new Error('OCR_PROVIDER_RETRY_EXHAUSTED');
     const payload = await response.json() as {
       output_text?: string;
       steps?: Array<{ content?: Array<{ text?: string }> }>;
