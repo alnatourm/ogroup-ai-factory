@@ -59,6 +59,7 @@ describe('document OCR adapter', () => {
     expect(result.structuredJson.entities[0]?.value).toBe('100 ريال');
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.hostname).toBe('generativelanguage.googleapis.com');
     expect(url.toString()).not.toContain('test-secret');
     expect(new Headers(init.headers).get('x-goog-api-key')).toBe('test-secret');
     const requestBody = JSON.parse(String(init.body)) as {
