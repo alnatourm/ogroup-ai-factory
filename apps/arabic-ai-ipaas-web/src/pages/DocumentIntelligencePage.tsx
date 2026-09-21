@@ -16,6 +16,16 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  const describeDocumentError = (code: string) => {
+    if (code === 'OCR_PROVIDER_HTTP_429') {
+      return language === 'ar'
+        ? 'وصل اتصال Gemini إلى حد الطلبات المؤقت. انتظر قليلاً ثم استخدم إعادة الاستخراج؛ لا تحتاج إلى رفع الملف مرة أخرى.'
+        : 'The Gemini connection reached a temporary request limit. Wait briefly, then retry extraction; the file does not need to be uploaded again.';
+    }
+    return code;
+  };
 
   const refreshHistory = useCallback(async () => {
     setIsHistoryLoading(true);
@@ -45,7 +55,8 @@ export const DocumentIntelligencePage: React.FC = () => {
       setJob(await ArabicAiIpaasClient.processDocument(file));
       await refreshHistory();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED');
+      const code = caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED';
+      setError(describeDocumentError(code));
     } finally {
       setIsProcessing(false);
       event.target.value = '';
@@ -61,6 +72,21 @@ export const DocumentIntelligencePage: React.FC = () => {
       setHistoryError(caught instanceof Error ? caught.message : 'DOCUMENT_DOWNLOAD_FAILED');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const handleRetryExtraction = async (document: DocumentRecord) => {
+    setRetryingId(document.id);
+    setHistoryError(null);
+    setError(null);
+    try {
+      await ArabicAiIpaasClient.retryDocumentExtraction(document.id);
+      await refreshHistory();
+    } catch (caught) {
+      const code = caught instanceof Error ? caught.message : 'DOCUMENT_EXTRACTION_RETRY_FAILED';
+      setHistoryError(describeDocumentError(code));
+    } finally {
+      setRetryingId(null);
     }
   };
 
@@ -269,17 +295,32 @@ export const DocumentIntelligencePage: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleDownload(document)}
-                    disabled={downloadingId === document.id}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-secondary text-secondary text-xs font-bold hover:bg-blue-50 disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">download</span>
-                    {downloadingId === document.id
-                      ? (language === 'ar' ? 'جارٍ التنزيل...' : 'Downloading...')
-                      : (language === 'ar' ? 'تنزيل الأصل' : 'Download original')}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {document.status === 'failed' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleRetryExtraction(document)}
+                        disabled={retryingId === document.id}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-amber-500 text-amber-700 text-xs font-bold hover:bg-amber-50 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">refresh</span>
+                        {retryingId === document.id
+                          ? (language === 'ar' ? 'جارٍ إعادة الاستخراج...' : 'Retrying extraction...')
+                          : (language === 'ar' ? 'إعادة الاستخراج' : 'Retry extraction')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDownload(document)}
+                      disabled={downloadingId === document.id}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-secondary text-secondary text-xs font-bold hover:bg-blue-50 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">download</span>
+                      {downloadingId === document.id
+                        ? (language === 'ar' ? 'جارٍ التنزيل...' : 'Downloading...')
+                        : (language === 'ar' ? 'تنزيل الأصل' : 'Download original')}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
