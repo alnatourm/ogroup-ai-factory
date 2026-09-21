@@ -57,6 +57,36 @@ describe('Gemini OCR transient retries', () => {
     warning.mockRestore();
   });
 
+  it('honors Gemini retry timing from a 429 response and succeeds without fabricating output', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        error: {
+          code: 429,
+          status: 'RESOURCE_EXHAUSTED',
+          message: 'Rate limit exceeded. Please retry in 34s.',
+        },
+      }), { status: 429, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(successResponse());
+    const sleep = vi.fn(async () => undefined);
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const adapter = new GeminiDocumentOcrAdapter(fetchMock, sleep);
+
+    const result = await adapter.extract({
+      content: Buffer.from('%PDF-1.7'),
+      mediaType: 'application/pdf',
+      filename: 'invoice.pdf',
+      provider: provider(),
+      secret: 'provider-secret',
+    });
+
+    expect(result.markdown).toBe('# نتيجة حقيقية');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(34_000);
+    expect(String(warning.mock.calls[0]?.[0])).toContain('"delayMs":34000');
+    expect(String(warning.mock.calls[0]?.[0])).not.toContain('provider-secret');
+    warning.mockRestore();
+  });
+
   it('does not retry non-transient client errors', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Invalid request' },

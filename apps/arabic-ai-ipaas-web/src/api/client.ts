@@ -483,6 +483,22 @@ export class ArabicAiIpaasClient {
   }
 
   /**
+   * Retry extraction for an already stored, tenant-scoped document.
+   * Reuses the verified original bytes and never creates a duplicate document.
+   */
+  static async retryDocumentExtraction(documentId: string): Promise<void> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/extractions`,
+      { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DOCUMENT_EXTRACTION_RETRY_FAILED_${response.status}`);
+    }
+  }
+
+  /**
    * Register metadata, upload validated bytes, then request extraction.
    * OCR remains explicitly not configured until a real worker adapter is connected.
    */
