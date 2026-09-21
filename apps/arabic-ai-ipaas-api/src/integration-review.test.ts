@@ -37,7 +37,7 @@ describe('Factory integration safety review', () => {
 
   it('never reports fake OCR success when OCR is not configured', async () => {
     const previous = process.env.OCR_WORKER_ENABLED;
-    delete process.env.OCR_WORKER_ENABLED;
+    process.env.OCR_WORKER_ENABLED = 'true';
     try {
       const repository = new MemoryDocumentRepository();
       const meta = validateDocumentUpload('invoice.pdf', 'application/pdf', 2048);
