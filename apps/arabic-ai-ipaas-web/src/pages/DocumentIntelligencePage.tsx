@@ -257,7 +257,7 @@ export const DocumentIntelligencePage: React.FC = () => {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge
-                        variant={document.status === 'ready' ? 'success' : document.status === 'failed' ? 'danger' : 'neutral'}
+                        variant={document.status === 'ready' ? 'success' : document.status === 'failed' ? 'error' : 'neutral'}
                         size="sm"
                       >
                         {document.status}
