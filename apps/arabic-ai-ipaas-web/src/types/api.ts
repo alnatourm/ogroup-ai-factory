@@ -238,7 +238,9 @@ export type DocumentRecord = {
   mediaType: string;
   objectKey: string;
   sizeBytes: number;
+  sha256?: string;
   status: 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
+  createdBy?: string;
   createdAt: string;
 };
 
