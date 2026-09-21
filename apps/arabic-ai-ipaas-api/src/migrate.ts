@@ -10,6 +10,7 @@ const migrations = [
   '0002_oidc_identities.sql',
   '0003_oidc_pending_enrollments.sql',
   '0004_document_objects.sql',
+  '0005_workspace_data_policies.sql',
 ];
 const pool = createPostgresPool(databaseUrl);
 
