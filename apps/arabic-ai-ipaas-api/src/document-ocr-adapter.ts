@@ -59,6 +59,40 @@ const RESPONSE_JSON_SCHEMA = {
   required: ['markdown', 'language', 'pageCount', 'textDirection', 'entities'],
 } as const;
 
+function sanitizeProviderDiagnostic(value: unknown): string | undefined {
+  if (typeof value !== 'string' && typeof value !== 'number') return undefined;
+  return String(value)
+    .replace(/AIza[A-Za-z0-9_-]+/g, '[redacted]')
+    .replace(/[A-Za-z0-9+/_=-]{64,}/g, '[redacted]')
+    .replace(/[\r\n\t]+/g, ' ')
+    .slice(0, 300);
+}
+
+async function throwProviderHttpError(response: Response, model: string): Promise<never> {
+  let providerCode: string | undefined;
+  let providerStatus: string | undefined;
+  let providerMessage: string | undefined;
+  try {
+    const body = JSON.parse(await response.text()) as {
+      error?: { code?: unknown; status?: unknown; message?: unknown };
+    };
+    providerCode = sanitizeProviderDiagnostic(body.error?.code);
+    providerStatus = sanitizeProviderDiagnostic(body.error?.status);
+    providerMessage = sanitizeProviderDiagnostic(body.error?.message);
+  } catch {
+    // Provider returned a non-JSON error. Keep diagnostics metadata-only.
+  }
+  console.error(JSON.stringify({
+    event: 'ocr.provider_http_error',
+    httpStatus: response.status,
+    model,
+    providerCode,
+    providerStatus,
+    providerMessage,
+  }));
+  throw new Error(`OCR_PROVIDER_HTTP_${response.status}:${providerStatus ?? 'UNKNOWN'}`);
+}
+
 function requireModel(provider: ProviderConnection): string {
   const configured = provider.config.ocrModel;
   const model = typeof configured === 'string' && configured.trim()
@@ -184,7 +218,7 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
       }),
     });
 
-    if (!response.ok) throw new Error(`OCR_PROVIDER_HTTP_${response.status}`);
+    if (!response.ok) await throwProviderHttpError(response, model);
     const payload = await response.json() as {
       output_text?: string;
       steps?: Array<{ content?: Array<{ text?: string }> }>;
