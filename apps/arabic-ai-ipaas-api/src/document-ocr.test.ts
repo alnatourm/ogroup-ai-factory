@@ -30,18 +30,17 @@ function geminiProvider(): ProviderConnection {
 describe('document OCR adapter', () => {
   it('sends document bytes inline without putting the secret in the URL and validates structured output', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      candidates: [{
-        content: {
-          parts: [{
-            text: JSON.stringify({
-              markdown: '# فاتورة\n\nالمجموع: 100 ريال',
-              language: 'ar',
-              pageCount: 1,
-              textDirection: 'rtl',
-              entities: [{ label: 'total', value: '100 ريال', confidence: 0.98 }],
-            }),
-          }],
-        },
+      steps: [{
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            markdown: '# فاتورة\n\nالمجموع: 100 ريال',
+            language: 'ar',
+            pageCount: 1,
+            textDirection: 'rtl',
+            entities: [{ label: 'total', value: '100 ريال', confidence: 0.98 }],
+          }),
+        }],
       }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const adapter = new GeminiDocumentOcrAdapter(fetchMock);
