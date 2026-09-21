@@ -101,6 +101,7 @@ describe('document OCR adapter', () => {
     const diagnostic = String(consoleSpy.mock.calls[0]?.[0]);
     expect(diagnostic).toContain('ocr.provider_http_error');
     expect(diagnostic).toContain('INVALID_ARGUMENT');
+    expect(diagnostic).toContain('"providerCode":"400"');
     expect(diagnostic).toContain('[redacted]');
     expect(diagnostic).not.toContain('AIzaThisMustNeverAppear');
     expect(diagnostic).not.toContain('A'.repeat(80));
