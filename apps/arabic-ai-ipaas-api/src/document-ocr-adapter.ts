@@ -33,32 +33,6 @@ export interface DocumentOcrAdapter {
 
 type FetchLike = typeof fetch;
 
-const RESPONSE_JSON_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    markdown: { type: 'string' },
-    language: { type: 'string' },
-    pageCount: { type: 'integer', minimum: 1, maximum: 1000 },
-    textDirection: { type: 'string', enum: ['rtl', 'ltr', 'mixed'] },
-    entities: {
-      type: 'array',
-      maxItems: 500,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        properties: {
-          label: { type: 'string' },
-          value: { type: 'string' },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-        },
-        required: ['label', 'value', 'confidence'],
-      },
-    },
-  },
-  required: ['markdown', 'language', 'pageCount', 'textDirection', 'entities'],
-} as const;
-
 function sanitizeProviderDiagnostic(value: unknown): string | undefined {
   if (typeof value !== 'string' && typeof value !== 'number') return undefined;
   return String(value)
@@ -146,7 +120,7 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
   });
 
   return {
-    engineVersion: `gemini:${model}`,
+    engineVersion: `gemini-interactions-prompt-json-v1:${model}`,
     markdown: record.markdown,
     structuredJson: {
       schemaVersion: 'document-extraction-json-v1',
@@ -206,15 +180,12 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
               'Extract this document faithfully.',
               'Preserve Arabic right-to-left reading order and document structure in markdown.',
               'Do not infer missing values. Return only values visibly supported by the document.',
-              'Identify the primary language, page count, text direction, and useful labeled entities.',
+              'Return only one valid JSON object with no markdown fence and exactly these fields:',
+              'markdown (non-empty string), language (short language code), pageCount (integer 1-1000),',
+              'textDirection (rtl, ltr, or mixed), and entities (array of objects with label, value, confidence from 0 to 1).',
             ].join(' '),
           },
         ],
-        response_format: {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: RESPONSE_JSON_SCHEMA,
-        },
       }),
     });
 
