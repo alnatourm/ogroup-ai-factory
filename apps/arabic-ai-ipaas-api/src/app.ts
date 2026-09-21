@@ -64,6 +64,12 @@ function getPathId(req: Request): string {
   return id;
 }
 
+function encodeContentDispositionFilename(filename: string): string {
+  return encodeURIComponent(filename).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
 const VALID_ROLES = new Set<WorkspaceRole>([
   'workspace_owner',
   'workspace_admin',
@@ -515,6 +521,49 @@ export function createApp(options: {
       }
       const extraction = await documentRepository.getExtraction(workspaceId, document.id);
       res.json({ data: { document, extraction: extraction ?? null } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/documents/:id/content', async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const documentId = getPathId(req);
+      const document = await documentRepository.get(context.workspaceId, documentId);
+      if (!document) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const stored = await documentContentStore.get(context.workspaceId, documentId);
+      if (!stored) {
+        res.status(409).json({ error: 'DOCUMENT_CONTENT_NOT_FOUND' });
+        return;
+      }
+
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.content_downloaded',
+        entityType: 'document',
+        entityId: documentId,
+        metadata: {
+          mediaType: stored.metadata.mediaType,
+          sizeBytes: stored.metadata.sizeBytes,
+          sha256: stored.metadata.sha256,
+        },
+      });
+
+      res.setHeader('Content-Type', stored.metadata.mediaType);
+      res.setHeader('Content-Length', String(stored.content.length));
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="document"; filename*=UTF-8''${encodeContentDispositionFilename(document.filename)}`,
+      );
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.status(200).send(stored.content);
     } catch (error) {
       next(error);
     }
