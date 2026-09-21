@@ -148,8 +148,7 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
     if (input.content.length > MAX_INLINE_OCR_BYTES) throw new Error('OCR_DOCUMENT_TOO_LARGE_FOR_INLINE');
     const model = requireModel(input.provider);
     const baseUrl = input.provider.baseUrl ?? 'https://generativelanguage.googleapis.com/v1beta/';
-    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    const url = new URL(`models/${encodeURIComponent(model)}:generateContent`, normalizedBase);
+    const url = new URL('/v1beta/interactions', baseUrl);
     if (url.protocol !== 'https:') throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS');
 
     const response = await this.fetchImpl(url, {
@@ -160,38 +159,42 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
       },
       signal: AbortSignal.timeout(60_000),
       body: JSON.stringify({
-        contents: [{
-          role: 'user',
-          parts: [
-            {
-              text: [
-                'Extract this document faithfully.',
-                'Preserve Arabic right-to-left reading order and document structure in markdown.',
-                'Do not infer missing values. Return only values visibly supported by the document.',
-                'Identify the primary language, page count, text direction, and useful labeled entities.',
-              ].join(' '),
-            },
-            {
-              inlineData: {
-                mimeType: input.mediaType,
-                data: input.content.toString('base64'),
-              },
-            },
-          ],
-        }],
-        generationConfig: {
-          temperature: 0,
-          responseMimeType: 'application/json',
-          responseJsonSchema: RESPONSE_JSON_SCHEMA,
+        model,
+        input: [
+          {
+            type: 'document',
+            data: input.content.toString('base64'),
+            mime_type: input.mediaType,
+          },
+          {
+            type: 'text',
+            text: [
+              'Extract this document faithfully.',
+              'Preserve Arabic right-to-left reading order and document structure in markdown.',
+              'Do not infer missing values. Return only values visibly supported by the document.',
+              'Identify the primary language, page count, text direction, and useful labeled entities.',
+            ].join(' '),
+          },
+        ],
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: RESPONSE_JSON_SCHEMA,
         },
       }),
     });
 
     if (!response.ok) throw new Error(`OCR_PROVIDER_HTTP_${response.status}`);
     const payload = await response.json() as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      output_text?: string;
+      steps?: Array<{ content?: Array<{ text?: string }> }>;
     };
-    const text = payload.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === 'string')?.text;
+    let text = typeof payload.output_text === 'string' ? payload.output_text : undefined;
+    if (!text) {
+      for (let index = (payload.steps?.length ?? 0) - 1; index >= 0 && !text; index -= 1) {
+        text = payload.steps?.[index]?.content?.find((part) => typeof part.text === 'string')?.text;
+      }
+    }
     if (!text) throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
 
     let parsed: unknown;

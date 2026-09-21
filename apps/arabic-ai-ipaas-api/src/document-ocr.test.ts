@@ -30,18 +30,17 @@ function geminiProvider(): ProviderConnection {
 describe('document OCR adapter', () => {
   it('sends document bytes inline without putting the secret in the URL and validates structured output', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      candidates: [{
-        content: {
-          parts: [{
-            text: JSON.stringify({
-              markdown: '# فاتورة\n\nالمجموع: 100 ريال',
-              language: 'ar',
-              pageCount: 1,
-              textDirection: 'rtl',
-              entities: [{ label: 'total', value: '100 ريال', confidence: 0.98 }],
-            }),
-          }],
-        },
+      steps: [{
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            markdown: '# فاتورة\n\nالمجموع: 100 ريال',
+            language: 'ar',
+            pageCount: 1,
+            textDirection: 'rtl',
+            entities: [{ label: 'total', value: '100 ريال', confidence: 0.98 }],
+          }),
+        }],
       }],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
     const adapter = new GeminiDocumentOcrAdapter(fetchMock);
@@ -60,21 +59,29 @@ describe('document OCR adapter', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(url.hostname).toBe('generativelanguage.googleapis.com');
+    expect(url.pathname).toBe('/v1beta/interactions');
     expect(url.toString()).not.toContain('test-secret');
     expect(new Headers(init.headers).get('x-goog-api-key')).toBe('test-secret');
     const requestBody = JSON.parse(String(init.body)) as {
-      contents: Array<{ parts: Array<{ inlineData?: { data: string } }> }>;
-      generationConfig: { responseMimeType: string };
+      model: string;
+      input: Array<{ type: string; data?: string; mime_type?: string }>;
+      response_format: { type: string; mime_type: string; schema: unknown };
     };
-    expect(requestBody.contents[0]?.parts[1]?.inlineData?.data)
-      .toBe(Buffer.from('%PDF-1.7 Arabic invoice').toString('base64'));
-    expect(requestBody.generationConfig.responseMimeType).toBe('application/json');
+    expect(requestBody.model).toBe('gemini-document-model');
+    expect(requestBody.input[0]).toEqual({
+      type: 'document',
+      data: Buffer.from('%PDF-1.7 Arabic invoice').toString('base64'),
+      mime_type: 'application/pdf',
+    });
+    expect(requestBody.response_format.type).toBe('text');
+    expect(requestBody.response_format.mime_type).toBe('application/json');
+    expect(requestBody.response_format.schema).toBeTruthy();
   });
 
   it('rejects provider responses that do not satisfy the extraction contract', async () => {
     const adapter = new GeminiDocumentOcrAdapter(
       vi.fn().mockResolvedValue(new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '{"markdown":"invented"}' }] } }],
+        steps: [{ content: [{ type: 'text', text: '{"markdown":"invented"}' }] }],
       }), { status: 200, headers: { 'Content-Type': 'application/json' } })),
     );
 
