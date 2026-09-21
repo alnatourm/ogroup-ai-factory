@@ -103,6 +103,41 @@ export class PostgresDocumentContentStore implements DocumentContentStore {
       : undefined;
   }
 
+  async get(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<{ metadata: DocumentContentMetadata; content: Buffer } | undefined> {
+    const result = await this.pool.query<{
+      workspace_id: string;
+      document_id: string;
+      media_type: string;
+      size_bytes: string | number;
+      sha256: string;
+      updated_at: Date;
+      content: Buffer;
+    }>(
+      `select workspace_id, document_id, media_type, size_bytes, sha256, updated_at, content
+         from document_objects
+        where workspace_id = $1 and document_id = $2
+        limit 1`,
+      [workspaceId, documentId],
+    );
+    const row = result.rows[0];
+    return row
+      ? {
+          metadata: {
+            workspaceId: row.workspace_id,
+            documentId: row.document_id,
+            mediaType: row.media_type,
+            sizeBytes: Number(row.size_bytes),
+            sha256: row.sha256,
+            uploadedAt: row.updated_at.toISOString(),
+          },
+          content: Buffer.from(row.content),
+        }
+      : undefined;
+  }
+
   async has(workspaceId: string, documentId: string): Promise<boolean> {
     const result = await this.pool.query(
       'select 1 from document_objects where workspace_id = $1 and document_id = $2 limit 1',

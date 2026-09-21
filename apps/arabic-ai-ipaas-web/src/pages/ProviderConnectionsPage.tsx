@@ -31,6 +31,7 @@ export const ProviderConnectionsPage: React.FC = () => {
   const [newBaseUrl, setNewBaseUrl] = useState('');
   const [newModelDefault, setNewModelDefault] = useState('');
   const [newApiKey, setNewApiKey] = useState('');
+  const [enableDocumentOcr, setEnableDocumentOcr] = useState(false);
 
   // Delete Provider Modal State
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -66,6 +67,9 @@ export const ProviderConnectionsPage: React.FC = () => {
         baseUrl: newBaseUrl.trim() || undefined,
         modelDefault: newModelDefault.trim() || undefined,
         apiKey: newApiKey.trim(),
+        ...(newProviderType === 'gemini' && enableDocumentOcr
+          ? { config: { documentOcrEnabled: true, ocrModel: newModelDefault.trim() } }
+          : {}),
       });
 
       setProviders((prev) => [created, ...prev.filter((p) => p.id !== created.id)]);
@@ -76,6 +80,7 @@ export const ProviderConnectionsPage: React.FC = () => {
       setNewBaseUrl('');
       setNewModelDefault('');
       setNewApiKey('');
+      setEnableDocumentOcr(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'حدث خطأ أثناء إضافة الموفر');
     } finally {
@@ -190,7 +195,7 @@ export const ProviderConnectionsPage: React.FC = () => {
             >
               <option value="all">{language === 'ar' ? 'كافة الأنواع' : 'All Providers'}</option>
               <option value="openai-compatible">OpenAI-Compatible</option>
-              <option value="gemini">Google Vertex AI / Gemini</option>
+              <option value="gemini">Google Gemini API</option>
               <option value="anthropic-compatible">Anthropic Claude</option>
               <option value="custom-http">Custom HTTP</option>
             </select>
@@ -264,6 +269,12 @@ export const ProviderConnectionsPage: React.FC = () => {
                   <span className="font-mono text-slate-700 break-all">{provider.baseUrl || 'الافتراضي للخدمة'}</span>
                 </div>
 
+                {provider.providerType === 'gemini' && provider.config.documentOcrEnabled === true && (
+                  <Badge variant="info" size="sm">
+                    {language === 'ar' ? 'معالجة المستندات مفعّلة' : 'Document processing enabled'}
+                  </Badge>
+                )}
+
                 {/* STRICT REQUIREMENT: Secret is NEVER shown, only cipher badge */}
                 <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between text-xs font-arabic">
                   <div className="flex items-center gap-2 text-slate-700">
@@ -315,8 +326,8 @@ export const ProviderConnectionsPage: React.FC = () => {
                 setNewBaseUrl('https://api.openai.com/v1');
                 setNewModelDefault('gpt-4o');
               } else if (val === 'gemini') {
-                setNewBaseUrl('https://me-central2-aiplatform.googleapis.com/v1');
-                setNewModelDefault('gemini-1.5-pro');
+                setNewBaseUrl('https://generativelanguage.googleapis.com/v1beta/');
+                setNewModelDefault('gemini-3.8-flash');
               } else if (val === 'anthropic-compatible') {
                 setNewBaseUrl('https://api.anthropic.com/v1');
                 setNewModelDefault('claude-3-5-sonnet');
@@ -324,7 +335,7 @@ export const ProviderConnectionsPage: React.FC = () => {
             }}
             options={[
               { value: 'openai-compatible', label: 'OpenAI-Compatible (Azure, OpenAI, Groq)' },
-              { value: 'gemini', label: 'Google Cloud Vertex AI / Gemini' },
+              { value: 'gemini', label: 'Google Gemini API' },
               { value: 'anthropic-compatible', label: 'Anthropic Claude' },
               { value: 'custom-http', label: 'Custom HTTP / Local Model' },
             ]}
@@ -342,7 +353,7 @@ export const ProviderConnectionsPage: React.FC = () => {
             label={language === 'ar' ? 'النموذج الافتراضي (Default Model)' : 'Default Model'}
             value={newModelDefault}
             onChange={(e) => setNewModelDefault(e.target.value)}
-            placeholder="gpt-4o / gemini-1.5-pro"
+            placeholder="gpt-4o / gemini-3.8-flash"
             dir="ltr"
           />
 
@@ -353,6 +364,27 @@ export const ProviderConnectionsPage: React.FC = () => {
             placeholder="https://..."
             dir="ltr"
           />
+
+          {newProviderType === 'gemini' && (
+            <label className="flex items-start gap-3 p-3 border border-outline-variant rounded-lg bg-slate-50 text-xs font-arabic">
+              <input
+                type="checkbox"
+                checked={enableDocumentOcr}
+                onChange={(event) => setEnableDocumentOcr(event.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                <span className="block font-bold text-primary">
+                  {language === 'ar' ? 'تفعيل معالجة المستندات لهذا الاتصال' : 'Enable document processing for this connection'}
+                </span>
+                <span className="block text-slate-500 mt-1">
+                  {language === 'ar'
+                    ? 'يرسل محتوى المستند إلى Gemini API عند طلب الاستخراج فقط. لا يستخدم مخزن ملفات Google المؤقت في هذا الإصدار.'
+                    : 'Sends document content to the Gemini API only when extraction is requested. This version does not use Google temporary file storage.'}
+                </span>
+              </span>
+            </label>
+          )}
 
           <Input
             label={language === 'ar' ? 'مفتاح الاعتماد السري (API Key / Secret)' : 'Secret API Key'}

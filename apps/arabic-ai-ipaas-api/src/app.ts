@@ -19,6 +19,11 @@ import {
   type DocumentContentStore,
 } from './document-content-store.js';
 import { MemoryProviderRepository } from './memory-repository.js';
+import {
+  GeminiDocumentOcrAdapter,
+  type DocumentOcrAdapter,
+} from './document-ocr-adapter.js';
+import { runDocumentOcr } from './document-ocr-service.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
 import { decryptSecret, encryptSecret, redactProvider, validateProviderBaseUrl } from './security.js';
@@ -191,6 +196,7 @@ export function createApp(options: {
   auditRepository?: AuditRepository;
   documentRepository?: DocumentRepository;
   documentContentStore?: DocumentContentStore;
+  documentOcrAdapter?: DocumentOcrAdapter;
   traceRepository?: TraceRepository;
   adapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
@@ -205,6 +211,7 @@ export function createApp(options: {
   const auditRepository = options.auditRepository ?? new MemoryAuditRepository();
   const documentRepository = options.documentRepository ?? new MemoryDocumentRepository();
   const documentContentStore = options.documentContentStore ?? new MemoryDocumentContentStore();
+  const documentOcrAdapter = options.documentOcrAdapter ?? new GeminiDocumentOcrAdapter();
   const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
   const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
@@ -566,20 +573,73 @@ export function createApp(options: {
         res.status(409).json({ error: 'DOCUMENT_CONTENT_REQUIRED' });
         return;
       }
-      const queued = await queueDocumentExtraction(context.workspaceId, documentId, documentRepository);
-      await auditRepository.record({
-        workspaceId: context.workspaceId,
-        actorUserId: context.userId,
-        actorType: 'user',
-        action: 'document.extraction_requested',
-        entityType: 'document',
-        entityId: documentId,
-        metadata: { workerConfigured: queued.configured },
-      });
-      res.status(202).json({
-        data: queued,
-        workerState: queued.configured ? 'configured' : 'not_configured',
-      });
+      const providers = (await providerRepository.list(context.workspaceId))
+        .filter((provider) => provider.status === 'active');
+      const provider = providers.find((candidate) => documentOcrAdapter.supports(candidate));
+      if (!provider) {
+        const queued = await queueDocumentExtraction(
+          context.workspaceId,
+          documentId,
+          documentRepository,
+        );
+        await auditRepository.record({
+          workspaceId: context.workspaceId,
+          actorUserId: context.userId,
+          actorType: 'user',
+          action: 'document.extraction_requested',
+          entityType: 'document',
+          entityId: documentId,
+          metadata: { workerConfigured: false },
+        });
+        res.status(202).json({ data: queued, workerState: 'not_configured' });
+        return;
+      }
+
+      try {
+        const completed = await runDocumentOcr({
+          workspaceId: context.workspaceId,
+          documentId,
+          documentRepository,
+          contentStore: documentContentStore,
+          provider,
+          secret: decryptSecret(provider.secretCiphertext, masterKey),
+          adapter: documentOcrAdapter,
+        });
+        await auditRepository.record({
+          workspaceId: context.workspaceId,
+          actorUserId: context.userId,
+          actorType: 'user',
+          action: 'document.extraction_completed',
+          entityType: 'document',
+          entityId: documentId,
+          metadata: {
+            workerConfigured: true,
+            providerConnectionId: provider.id,
+            engineVersion: completed.extraction.engineVersion,
+            language: completed.extraction.language,
+            pageCount: completed.extraction.pageCount,
+          },
+        });
+        res.status(200).json({ data: completed, workerState: 'configured' });
+      } catch (error) {
+        const errorCode = error instanceof Error
+          ? (error.message.split(':')[0] ?? 'OCR_PROCESSING_FAILED')
+          : 'OCR_PROCESSING_FAILED';
+        await auditRepository.record({
+          workspaceId: context.workspaceId,
+          actorUserId: context.userId,
+          actorType: 'user',
+          action: 'document.extraction_failed',
+          entityType: 'document',
+          entityId: documentId,
+          metadata: {
+            workerConfigured: true,
+            providerConnectionId: provider.id,
+            errorCode,
+          },
+        });
+        next(error);
+      }
     } catch (error) {
       next(error);
     }
@@ -690,6 +750,23 @@ export function createApp(options: {
     ]);
     if (badRequestCodes.has(code)) {
       res.status(400).json({ error: code });
+      return;
+    }
+    if (code === 'OCR_DOCUMENT_TOO_LARGE_FOR_INLINE') {
+      res.status(413).json({ error: code });
+      return;
+    }
+    if (
+      code === 'OCR_MODEL_NOT_CONFIGURED' ||
+      code === 'INVALID_OCR_MODEL' ||
+      code === 'OCR_PROVIDER_NOT_ENABLED' ||
+      code === 'DOCUMENT_CONTENT_INTEGRITY_FAILED'
+    ) {
+      res.status(409).json({ error: code });
+      return;
+    }
+    if (code === 'OCR_PROVIDER_INVALID_RESPONSE' || code.startsWith('OCR_PROVIDER_HTTP_')) {
+      res.status(502).json({ error: code });
       return;
     }
     if ((error as { type?: string }).type === 'entity.too.large') {

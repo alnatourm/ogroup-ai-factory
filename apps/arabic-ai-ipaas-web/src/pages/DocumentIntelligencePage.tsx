@@ -44,8 +44,8 @@ export const DocumentIntelligencePage: React.FC = () => {
           <Badge variant="primary" size="md">
             {language === 'ar' ? 'رفع المستند متصل بالواجهة البرمجية' : 'Live document upload'}
           </Badge>
-          <Badge variant="warning" size="md">
-            {language === 'ar' ? 'محول OCR غير مهيأ' : 'OCR adapter not configured'}
+          <Badge variant="info" size="md">
+            {language === 'ar' ? 'OCR عبر اتصال BYOAI صريح' : 'OCR through explicit BYOAI connection'}
           </Badge>
         </div>
         <h1 className="text-xl lg:text-2xl font-bold text-primary font-arabic">
@@ -53,8 +53,8 @@ export const DocumentIntelligencePage: React.FC = () => {
         </h1>
         <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
           {language === 'ar'
-            ? 'يرفع الإصدار الحالي محتوى المستند بعد التحقق من النوع والحجم والبصمة الرقمية، ثم يطلب مهمة الاستخراج بأمان. سيبقى OCR غير متاح حتى ربط عامل حقيقي.'
-            : 'This version uploads document bytes after validating type, size, signature, and digest, then safely requests extraction. OCR remains unavailable until a real worker is connected.'}
+            ? 'يرفع المحتوى بعد التحقق الأمني، ثم يستخدم اتصال Gemini المفعّل صراحةً لاستخراج النص العربي والبنية. إذا لم يوجد اتصال مؤهل، يعرض النظام حالة غير مهيأة دون نجاح وهمي.'
+            : 'Content is uploaded after security validation, then an explicitly enabled Gemini connection extracts Arabic text and structure. Without an eligible connection, the system reports not configured without fake success.'}
         </p>
       </div>
 
@@ -85,7 +85,7 @@ export const DocumentIntelligencePage: React.FC = () => {
                 {isProcessing && (
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <LoadingSpinner size="sm" label="" />
-                    <span>{language === 'ar' ? 'جارٍ التحقق والرفع وتسجيل المهمة...' : 'Validating, uploading, and registering...'}</span>
+                    <span>{language === 'ar' ? 'جارٍ التحقق والرفع والاستخراج...' : 'Validating, uploading, and extracting...'}</span>
                   </div>
                 )}
               </div>
@@ -93,7 +93,7 @@ export const DocumentIntelligencePage: React.FC = () => {
 
             {error && (
               <div role="alert" className="p-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-800 text-xs font-arabic">
-                {language === 'ar' ? 'تعذر رفع المستند: ' : 'Document upload failed: '}{error}
+                {language === 'ar' ? 'تعذرت معالجة المستند: ' : 'Document processing failed: '}{error}
               </div>
             )}
           </CardBody>
@@ -112,11 +112,23 @@ export const DocumentIntelligencePage: React.FC = () => {
                 </div>
               ) : (
                 <div className="space-y-4 font-arabic">
-                  <div className={`p-4 rounded-xl border ${job.workerState === 'not_configured' ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-blue-50 border-blue-200 text-blue-900'}`}>
+                  <div className={`p-4 rounded-xl border ${
+                    job.extraction.status === 'ready'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                      : job.workerState === 'not_configured'
+                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                        : job.extraction.status === 'failed'
+                          ? 'bg-rose-50 border-rose-200 text-rose-900'
+                          : 'bg-blue-50 border-blue-200 text-blue-900'
+                  }`}>
                     <div className="font-bold text-sm">
-                      {job.workerState === 'not_configured'
-                        ? (language === 'ar' ? 'تم رفع محتوى المستند والتحقق منه، لكن OCR غير مهيأ.' : 'Document content uploaded and verified; OCR is not configured.')
-                        : (language === 'ar' ? 'تم تسجيل المهمة وهي قيد المعالجة.' : 'The job is registered and processing.')}
+                      {job.extraction.status === 'ready'
+                        ? (language === 'ar' ? 'اكتمل استخراج المستند عبر اتصال BYOAI المفعّل.' : 'Document extraction completed through the enabled BYOAI connection.')
+                        : job.workerState === 'not_configured'
+                          ? (language === 'ar' ? 'تم رفع محتوى المستند والتحقق منه، لكن لا يوجد اتصال OCR مفعّل.' : 'Document content uploaded and verified; no OCR connection is enabled.')
+                          : job.extraction.status === 'failed'
+                            ? (language === 'ar' ? 'فشل عامل الاستخراج دون إنشاء نتيجة وهمية.' : 'The extraction worker failed without fabricating a result.')
+                            : (language === 'ar' ? 'المستند قيد المعالجة.' : 'The document is processing.')}
                     </div>
                     <div className="text-xs mt-2">
                       {job.uploadConfigured
@@ -147,6 +159,30 @@ export const DocumentIntelligencePage: React.FC = () => {
                       <dd className="font-mono text-primary break-all mt-1">{job.upload.sha256}</dd>
                     </div>
                   </dl>
+
+                  {job.extraction.status === 'ready' && job.extraction.markdown && (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="success" size="sm">
+                          {language === 'ar' ? 'نتيجة استخراج حقيقية' : 'Real extraction result'}
+                        </Badge>
+                        {job.extraction.language && (
+                          <Badge variant="neutral" size="sm">{job.extraction.language}</Badge>
+                        )}
+                        {job.extraction.pageCount && (
+                          <Badge variant="neutral" size="sm">
+                            {job.extraction.pageCount} {language === 'ar' ? 'صفحة' : 'page(s)'}
+                          </Badge>
+                        )}
+                      </div>
+                      <pre
+                        dir={job.extraction.structuredJson?.textDirection === 'rtl' ? 'rtl' : 'auto'}
+                        className="p-4 rounded-xl border border-outline-variant bg-white text-sm leading-7 whitespace-pre-wrap break-words font-arabic max-h-[420px] overflow-auto"
+                      >
+                        {job.extraction.markdown}
+                      </pre>
+                    </div>
+                  )}
 
                   {job.extraction.errorMessage && (
                     <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 text-xs font-mono break-words">
