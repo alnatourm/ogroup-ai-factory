@@ -814,6 +814,10 @@ export function createApp(options: {
       res.status(409).json({ error: code });
       return;
     }
+    if (code === 'OCR_PROVIDER_HTTP_429') {
+      res.status(429).json({ error: code });
+      return;
+    }
     if (code === 'OCR_PROVIDER_INVALID_RESPONSE' || code.startsWith('OCR_PROVIDER_HTTP_')) {
       res.status(502).json({ error: code });
       return;
