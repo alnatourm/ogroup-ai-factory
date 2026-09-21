@@ -56,6 +56,7 @@ describe('document OCR adapter', () => {
     expect(result.language).toBe('ar');
     expect(result.structuredJson.textDirection).toBe('rtl');
     expect(result.structuredJson.entities[0]?.value).toBe('100 ريال');
+    expect(result.engineVersion).toBe('gemini-interactions-prompt-json-v1:gemini-document-model');
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(url.hostname).toBe('generativelanguage.googleapis.com');
@@ -64,8 +65,8 @@ describe('document OCR adapter', () => {
     expect(new Headers(init.headers).get('x-goog-api-key')).toBe('test-secret');
     const requestBody = JSON.parse(String(init.body)) as {
       model: string;
-      input: Array<{ type: string; data?: string; mime_type?: string }>;
-      response_format: { type: string; mime_type: string; schema: unknown };
+      input: Array<{ type: string; data?: string; mime_type?: string; text?: string }>;
+      response_format?: unknown;
     };
     expect(requestBody.model).toBe('gemini-document-model');
     expect(requestBody.input[0]).toEqual({
@@ -73,9 +74,9 @@ describe('document OCR adapter', () => {
       data: Buffer.from('%PDF-1.7 Arabic invoice').toString('base64'),
       mime_type: 'application/pdf',
     });
-    expect(requestBody.response_format.type).toBe('text');
-    expect(requestBody.response_format.mime_type).toBe('application/json');
-    expect(requestBody.response_format.schema).toBeTruthy();
+    expect(requestBody.response_format).toBeUndefined();
+    expect(requestBody.input[1]?.text).toContain('Return only one valid JSON object');
+    expect(requestBody.input[1]?.text).toContain('textDirection');
   });
 
   it('logs only sanitized provider diagnostics for rejected requests', async () => {
