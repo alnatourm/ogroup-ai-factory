@@ -166,45 +166,23 @@ export async function queueDocumentExtraction(
   repository: DocumentRepository,
 ): Promise<{ document: DocumentRecord; extraction: DocumentExtractionRecord; configured: boolean }> {
   const document = await repository.get(workspaceId, documentId);
-  if (!document) {
-    throw new Error('DOCUMENT_NOT_FOUND');
-  }
+  if (!document) throw new Error('DOCUMENT_NOT_FOUND');
 
-  // Check if OCR engine worker is configured in environment
-  const isOcrWorkerConfigured = process.env.OCR_WORKER_ENABLED === 'true';
-
-  if (!isOcrWorkerConfigured) {
-    // Truthful, un-fabricated status: OCR engine is not wired.
-    await repository.updateStatus(workspaceId, documentId, 'processing');
-    const extraction = await repository.createOrUpdateExtraction(workspaceId, documentId, {
-      schemaVersion: 'document-extraction-json-v1',
-      engineVersion: undefined,
-      status: 'processing',
-      errorMessage: 'OCR_ENGINE_NOT_CONFIGURED: Sovereign multimodal OCR worker is not configured in this environment.',
-      markdown: undefined,
-      structuredJson: undefined,
-      language: undefined,
-      pageCount: undefined,
-    });
-
-    return {
-      document: { ...document, status: 'processing' },
-      extraction,
-      configured: false,
-    };
-  }
-
-  // If OCR worker were configured, it would be dispatched here asynchronously
   await repository.updateStatus(workspaceId, documentId, 'processing');
   const extraction = await repository.createOrUpdateExtraction(workspaceId, documentId, {
     schemaVersion: 'document-extraction-json-v1',
-    engineVersion: 'wasl-ocr-v1',
+    engineVersion: undefined,
     status: 'processing',
+    errorMessage: 'OCR_ENGINE_NOT_CONFIGURED: No enabled OCR-capable provider and executable adapter are configured.',
+    markdown: undefined,
+    structuredJson: undefined,
+    language: undefined,
+    pageCount: undefined,
   });
 
   return {
     document: { ...document, status: 'processing' },
     extraction,
-    configured: true,
+    configured: false,
   };
 }
