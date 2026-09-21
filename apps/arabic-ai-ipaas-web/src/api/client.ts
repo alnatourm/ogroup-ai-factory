@@ -2,6 +2,7 @@ import {
   type CreateProviderInput,
   type DataPolicyConfig,
   type DocumentProcessingJob,
+  type DocumentRecord,
   type GatewayRequest,
   type GatewayResponse,
   type SafeProviderConnection,
@@ -431,6 +432,54 @@ export class ArabicAiIpaasClient {
         ...(step.errorMessage ? { errorMessage: step.errorMessage } : {}),
       })),
     }));
+  }
+
+  /**
+   * List persisted documents for the authenticated workspace.
+   */
+  static async listDocuments(): Promise<DocumentRecord[]> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/documents`, {
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`DOCUMENT_HISTORY_LOAD_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: DocumentRecord[] };
+    return body.data;
+  }
+
+  /**
+   * Download original bytes from the authenticated, tenant-scoped endpoint.
+   */
+  static async downloadDocument(document: DocumentRecord): Promise<void> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(document.id)}/content`,
+      {
+        headers: buildHeaders(config),
+        credentials: 'same-origin',
+      },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error || `DOCUMENT_DOWNLOAD_FAILED_${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const anchor = window.document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = document.filename;
+      anchor.rel = 'noopener';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   }
 
   /**
