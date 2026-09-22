@@ -38,6 +38,8 @@ describe('document OCR adapter', () => {
             language: 'ar',
             pageCount: 1,
             textDirection: 'rtl',
+            documentType: 'other',
+            invoice: null,
             entities: [{ label: 'total', value: '100 ريال', confidence: 0.98 }],
           }),
         }],
@@ -56,7 +58,7 @@ describe('document OCR adapter', () => {
     expect(result.language).toBe('ar');
     expect(result.structuredJson.textDirection).toBe('rtl');
     expect(result.structuredJson.entities[0]?.value).toBe('100 ريال');
-    expect(result.engineVersion).toBe('gemini-interactions-prompt-json-v1:gemini-document-model');
+    expect(result.engineVersion).toBe('gemini-interactions-prompt-json-v2:gemini-document-model');
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(url.hostname).toBe('generativelanguage.googleapis.com');
