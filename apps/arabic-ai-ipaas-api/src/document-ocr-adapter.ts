@@ -87,7 +87,24 @@ function sanitizeProviderDiagnostic(value: unknown): string | undefined {
     .slice(0, 300);
 }
 
-async function throwProviderHttpError(response: Response, model: string): Promise<never> {
+async function isDailyQuotaExhausted(response: Response): Promise<boolean> {
+  if (response.status !== 429) return false;
+  try {
+    const body = JSON.parse(await response.clone().text()) as {
+      error?: { message?: unknown };
+    };
+    const message = typeof body.error?.message === 'string' ? body.error.message : '';
+    return /requests?\s+per\s+day|daily\s+(?:request\s+)?limit/i.test(message);
+  } catch {
+    return false;
+  }
+}
+
+async function throwProviderHttpError(
+  response: Response,
+  model: string,
+  stableCode?: string,
+): Promise<never> {
   let providerCode: string | undefined;
   let providerStatus: string | undefined;
   let providerMessage: string | undefined;
@@ -109,7 +126,7 @@ async function throwProviderHttpError(response: Response, model: string): Promis
     providerStatus,
     providerMessage,
   }));
-  throw new Error(`OCR_PROVIDER_HTTP_${response.status}:${providerStatus ?? 'UNKNOWN'}`);
+  throw new Error(stableCode ?? `OCR_PROVIDER_HTTP_${response.status}:${providerStatus ?? 'UNKNOWN'}`);
 }
 
 function requireModel(provider: ProviderConnection): string {
@@ -262,6 +279,9 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
       });
 
       if (response.ok) break;
+      if (await isDailyQuotaExhausted(response)) {
+        await throwProviderHttpError(response, model, 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED');
+      }
       if (!isRetryableProviderStatus(response.status) || attempt === MAX_OCR_ATTEMPTS) {
         await throwProviderHttpError(response, model);
       }
