@@ -29,7 +29,7 @@ export async function runDocumentOcr(input: {
 
   await input.documentRepository.updateStatus(input.workspaceId, input.documentId, 'processing');
   await input.documentRepository.createOrUpdateExtraction(input.workspaceId, input.documentId, {
-    schemaVersion: 'document-extraction-json-v1',
+    schemaVersion: 'document-extraction-json-v2',
     engineVersion: undefined,
     status: 'processing',
     errorMessage: undefined,
@@ -47,7 +47,7 @@ export async function runDocumentOcr(input: {
       input.workspaceId,
       input.documentId,
       {
-        schemaVersion: 'document-extraction-json-v1',
+        schemaVersion: 'document-extraction-json-v2',
         engineVersion: result.engineVersion,
         markdown: result.markdown,
         structuredJson: result.structuredJson,
@@ -68,7 +68,7 @@ export async function runDocumentOcr(input: {
     const code = stableErrorCode(error);
     await input.documentRepository.updateStatus(input.workspaceId, input.documentId, 'failed');
     await input.documentRepository.createOrUpdateExtraction(input.workspaceId, input.documentId, {
-      schemaVersion: 'document-extraction-json-v1',
+      schemaVersion: 'document-extraction-json-v2',
       engineVersion: undefined,
       status: 'failed',
       errorMessage: code,
