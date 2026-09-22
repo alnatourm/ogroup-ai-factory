@@ -40,6 +40,11 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const describeDocumentError = (code: string) => {
+    if (code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED') {
+      return language === 'ar'
+        ? 'وصل اتصال Gemini إلى الحد اليومي للخطة المجانية. لن تنجح إعادة المحاولة اليوم بهذا النموذج؛ انتظر تجدد الحصة أو استخدم اتصالاً بحصة متاحة.'
+        : 'The Gemini connection reached its Free Tier daily quota. Retrying this model today will not succeed; wait for quota renewal or use a connection with available quota.';
+    }
     if (code === 'OCR_PROVIDER_HTTP_429') {
       return language === 'ar'
         ? 'وصل اتصال Gemini إلى حد الطلبات المؤقت. انتظر قليلاً ثم استخدم إعادة الاستخراج؛ لا تحتاج إلى رفع الملف مرة أخرى.'

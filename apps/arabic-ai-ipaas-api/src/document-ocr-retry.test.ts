@@ -121,6 +121,31 @@ describe('Gemini OCR transient retries', () => {
     warning.mockRestore();
   });
 
+  it('fails immediately when Gemini reports an exhausted daily quota', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: 'too_many_requests',
+        message: 'Rate limit exceeded (limit: 20 requests per day on Free Tier).',
+      },
+    }), { status: 429, headers: { 'Content-Type': 'application/json' } }));
+    const sleep = vi.fn(async () => undefined);
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const adapter = new GeminiDocumentOcrAdapter(fetchMock, sleep);
+
+    await expect(adapter.extract({
+      content: Buffer.from('%PDF-1.7'),
+      mediaType: 'application/pdf',
+      filename: 'invoice.pdf',
+      provider: provider(),
+      secret: 'provider-secret',
+    })).rejects.toThrow('OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(String(error.mock.calls[0]?.[0])).not.toContain('provider-secret');
+    error.mockRestore();
+  });
+
   it('does not retry non-transient client errors', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Invalid request' },
