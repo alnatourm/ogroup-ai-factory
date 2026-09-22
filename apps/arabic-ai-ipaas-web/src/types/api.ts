@@ -244,6 +244,42 @@ export type DocumentRecord = {
   createdAt: string;
 };
 
+export type InvoiceLineItem = {
+  description: string;
+  quantity: string | null;
+  unitPrice: string | null;
+  taxAmount: string | null;
+  lineTotal: string | null;
+};
+
+export type StructuredInvoice = {
+  supplierName: string | null;
+  supplierTaxId: string | null;
+  invoiceNumber: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  currency: string | null;
+  subtotal: string | null;
+  taxTotal: string | null;
+  grandTotal: string | null;
+  confidence: Record<
+    'supplierName' | 'supplierTaxId' | 'invoiceNumber' | 'invoiceDate' | 'dueDate' |
+    'currency' | 'subtotal' | 'taxTotal' | 'grandTotal',
+    number | null
+  >;
+  lineItems: InvoiceLineItem[];
+  validationWarnings: string[];
+  reviewRequired: boolean;
+};
+
+export type DocumentStructuredJsonV2 = {
+  schemaVersion: 'document-extraction-json-v2';
+  textDirection: 'rtl' | 'ltr' | 'mixed';
+  documentType: 'invoice' | 'other';
+  invoice: StructuredInvoice | null;
+  entities: Array<{ label: string; value: string; confidence: number }>;
+};
+
 export type DocumentExtractionRecord = {
   id: string;
   workspaceId: string;
@@ -251,7 +287,7 @@ export type DocumentExtractionRecord = {
   schemaVersion: string;
   engineVersion?: string;
   markdown?: string;
-  structuredJson?: Record<string, unknown>;
+  structuredJson?: DocumentStructuredJsonV2 | Record<string, unknown>;
   language?: string;
   pageCount?: number;
   status: 'processing' | 'ready' | 'failed';
