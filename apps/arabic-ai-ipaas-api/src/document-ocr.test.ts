@@ -134,8 +134,10 @@ describe('document OCR adapter', () => {
         engineVersion: 'test-real-adapter-v1',
         markdown: '# سري للعميل',
         structuredJson: {
-          schemaVersion: 'document-extraction-json-v1',
+          schemaVersion: 'document-extraction-json-v2',
           textDirection: 'rtl',
+          documentType: 'other',
+          invoice: null,
           entities: [{ label: 'invoice_number', value: 'INV-100', confidence: 1 }],
         },
         language: 'ar',
