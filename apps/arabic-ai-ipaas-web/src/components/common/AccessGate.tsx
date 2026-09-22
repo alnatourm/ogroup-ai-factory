@@ -5,9 +5,10 @@ import { useI18n } from '../../i18n/I18nContext.js';
 
 interface AccessGateProps {
   onAuthenticated: () => void;
+  reason?: 'session_expired';
 }
 
-export const AccessGate: React.FC<AccessGateProps> = ({ onAuthenticated }) => {
+export const AccessGate: React.FC<AccessGateProps> = ({ onAuthenticated, reason }) => {
   const { language, toggleLanguage } = useI18n();
   const initial = getApiConfig();
   const [apiKey, setApiKey] = useState('');
@@ -94,6 +95,14 @@ export const AccessGate: React.FC<AccessGateProps> = ({ onAuthenticated }) => {
             {language === 'ar' ? 'English' : 'العربية'}
           </button>
         </div>
+
+        {reason === 'session_expired' && (
+          <div role="alert" className="mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 font-arabic text-sm text-amber-900">
+            {language === 'ar'
+              ? 'انتهت جلسة تسجيل الدخول. سجّل الدخول المؤسسي مرة أخرى، ثم أعد محاولة العملية.'
+              : 'Your sign-in session expired. Sign in again, then retry the operation.'}
+          </div>
+        )}
 
         <div className="mb-5 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
           {language === 'ar'

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { AppRoute } from './types/routes.js';
 import { APPROVED_ROUTES } from './types/routes.js';
 import { getApiConfig } from './api/config.js';
+import { AUTHENTICATION_REQUIRED_EVENT } from './api/client.js';
 import { AccessGate } from './components/common/AccessGate.js';
 import { AppShell } from './components/common/AppShell.js';
 import { WorkspaceOnboardingPage } from './pages/WorkspaceOnboardingPage.js';
@@ -25,6 +26,7 @@ function getInitialRoute(): AppRoute {
 export const App: React.FC = () => {
   const [currentRoute, setCurrentRoute] = useState<AppRoute>(getInitialRoute);
   const [authenticated, setAuthenticated] = useState(() => Boolean(getApiConfig().apiKey));
+  const [authReason, setAuthReason] = useState<'session_expired' | undefined>();
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -36,13 +38,27 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [currentRoute]);
 
+  useEffect(() => {
+    const handleAuthenticationRequired = () => {
+      setAuthReason('session_expired');
+      setAuthenticated(false);
+    };
+    window.addEventListener(AUTHENTICATION_REQUIRED_EVENT, handleAuthenticationRequired);
+    return () => window.removeEventListener(AUTHENTICATION_REQUIRED_EVENT, handleAuthenticationRequired);
+  }, []);
+
+  const handleAuthenticated = useCallback(() => {
+    setAuthReason(undefined);
+    setAuthenticated(true);
+  }, []);
+
   const handleNavigate = useCallback((route: AppRoute) => {
     setCurrentRoute(route);
     if (typeof window !== 'undefined') window.location.hash = `#/${route}`;
   }, []);
 
   if (!authenticated) {
-    return <AccessGate onAuthenticated={() => setAuthenticated(true)} />;
+    return <AccessGate reason={authReason} onAuthenticated={handleAuthenticated} />;
   }
 
   const pages: Record<AppRoute, React.ReactNode> = {

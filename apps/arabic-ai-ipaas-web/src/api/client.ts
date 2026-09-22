@@ -14,6 +14,8 @@ import {
 } from '../types/api.js';
 import { getApiConfig } from './config.js';
 
+export const AUTHENTICATION_REQUIRED_EVENT = 'ogroup:authentication-required';
+
 /* =========================================================================
  * NON-PRODUCTION PLACEHOLDER SEED DATA
  * Used when backend endpoints are either unreachable or not yet implemented
@@ -87,6 +89,17 @@ function buildBinaryHeaders(mediaType: string, config = getApiConfig()): Record<
   const headers = buildHeaders(config);
   headers['Content-Type'] = mediaType;
   return headers;
+}
+
+async function throwResponseError(response: Response, fallbackCode: string): Promise<never> {
+  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(AUTHENTICATION_REQUIRED_EVENT));
+    }
+    throw new Error('AUTHENTICATION_REQUIRED');
+  }
+  throw new Error(body.error || fallbackCode);
 }
 
 function requireMockFallback(): void {
@@ -444,7 +457,7 @@ export class ArabicAiIpaasClient {
       credentials: 'same-origin',
     });
     if (!response.ok) {
-      throw new Error(`DOCUMENT_HISTORY_LOAD_FAILED_${response.status}`);
+      await throwResponseError(response, `DOCUMENT_HISTORY_LOAD_FAILED_${response.status}`);
     }
     const body = (await response.json()) as { data: DocumentRecord[] };
     return body.data;
@@ -463,8 +476,7 @@ export class ArabicAiIpaasClient {
       },
     );
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error || `DOCUMENT_DOWNLOAD_FAILED_${response.status}`);
+      await throwResponseError(response, `DOCUMENT_DOWNLOAD_FAILED_${response.status}`);
     }
 
     const blob = await response.blob();
@@ -493,8 +505,7 @@ export class ArabicAiIpaasClient {
       { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
     );
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error || `DOCUMENT_EXTRACTION_RETRY_FAILED_${response.status}`);
+      await throwResponseError(response, `DOCUMENT_EXTRACTION_RETRY_FAILED_${response.status}`);
     }
   }
 
@@ -513,8 +524,10 @@ export class ArabicAiIpaasClient {
       body: JSON.stringify({ filename: file.name, mediaType: file.type, sizeBytes: file.size }),
     });
     if (!registrationResponse.ok) {
-      const body = (await registrationResponse.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error || `DOCUMENT_REGISTRATION_FAILED_${registrationResponse.status}`);
+      await throwResponseError(
+        registrationResponse,
+        `DOCUMENT_REGISTRATION_FAILED_${registrationResponse.status}`,
+      );
     }
     const registration = (await registrationResponse.json()) as {
       data: DocumentProcessingJob['document'];
@@ -531,8 +544,7 @@ export class ArabicAiIpaasClient {
       },
     );
     if (!uploadResponse.ok) {
-      const body = (await uploadResponse.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error || `DOCUMENT_UPLOAD_FAILED_${uploadResponse.status}`);
+      await throwResponseError(uploadResponse, `DOCUMENT_UPLOAD_FAILED_${uploadResponse.status}`);
     }
     const upload = (await uploadResponse.json()) as {
       data: DocumentProcessingJob['upload'];
@@ -544,8 +556,10 @@ export class ArabicAiIpaasClient {
       { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
     );
     if (!extractionResponse.ok) {
-      const body = (await extractionResponse.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error || `DOCUMENT_EXTRACTION_REQUEST_FAILED_${extractionResponse.status}`);
+      await throwResponseError(
+        extractionResponse,
+        `DOCUMENT_EXTRACTION_REQUEST_FAILED_${extractionResponse.status}`,
+      );
     }
     const extraction = (await extractionResponse.json()) as {
       data: {
