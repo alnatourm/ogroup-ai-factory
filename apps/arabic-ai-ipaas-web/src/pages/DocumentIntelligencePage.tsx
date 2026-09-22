@@ -118,7 +118,7 @@ export const DocumentIntelligencePage: React.FC = () => {
   };
 
   const invoice = getStructuredInvoice(job);
-  const displayValue = (value: string | null) => value ?? (language === 'ar' ? 'غير موجود' : 'Not found');
+  const displayValue = (value: string | null | undefined) => value ?? (language === 'ar' ? 'غير موجود' : 'Not found');
   const warningLabel = (warning: string) => invoiceWarningLabels[warning]?.[language] ?? warning;
 
   return (
