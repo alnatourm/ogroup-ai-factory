@@ -25,6 +25,36 @@ function successResponse(): Response {
       language: 'ar',
       pageCount: 1,
       textDirection: 'rtl',
+      documentType: 'invoice',
+      invoice: {
+        supplierName: 'شركة المثال',
+        supplierTaxId: '123456789',
+        invoiceNumber: 'INV-1001',
+        invoiceDate: '2026-09-22',
+        dueDate: null,
+        currency: 'JOD',
+        subtotal: '100.00',
+        taxTotal: '16.00',
+        grandTotal: '116.00',
+        confidence: {
+          supplierName: 0.98,
+          supplierTaxId: 0.97,
+          invoiceNumber: 0.99,
+          invoiceDate: 0.95,
+          dueDate: null,
+          currency: 0.96,
+          subtotal: 0.97,
+          taxTotal: 0.97,
+          grandTotal: 0.99,
+        },
+        lineItems: [{
+          description: 'خدمة',
+          quantity: '1',
+          unitPrice: '100.00',
+          taxAmount: '16.00',
+          lineTotal: '116.00',
+        }],
+      },
       entities: [],
     }),
   }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -50,6 +80,10 @@ describe('Gemini OCR transient retries', () => {
     });
 
     expect(result.markdown).toBe('# نتيجة حقيقية');
+    expect(result.structuredJson.schemaVersion).toBe('document-extraction-json-v2');
+    expect(result.structuredJson.invoice?.invoiceNumber).toBe('INV-1001');
+    expect(result.structuredJson.invoice?.validationWarnings).toEqual([]);
+    expect(result.structuredJson.invoice?.reviewRequired).toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(String(warning.mock.calls[0]?.[0])).toContain('ocr.provider_retry');
