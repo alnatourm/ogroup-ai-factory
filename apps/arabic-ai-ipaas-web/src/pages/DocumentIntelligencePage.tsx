@@ -1,10 +1,31 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob, DocumentRecord } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
+
+function getStructuredInvoice(job: DocumentProcessingJob | null): StructuredInvoice | null {
+  const structured = job?.extraction.structuredJson;
+  if (
+    !structured ||
+    structured.schemaVersion !== 'document-extraction-json-v2' ||
+    structured.documentType !== 'invoice'
+  ) {
+    return null;
+  }
+  return (structured as DocumentStructuredJsonV2).invoice;
+}
+
+const invoiceWarningLabels: Record<string, { ar: string; en: string }> = {
+  MISSING_SUPPLIER_NAME: { ar: 'اسم المورد غير موجود', en: 'Supplier name is missing' },
+  MISSING_INVOICE_NUMBER: { ar: 'رقم الفاتورة غير موجود', en: 'Invoice number is missing' },
+  MISSING_INVOICE_DATE: { ar: 'تاريخ الفاتورة غير موجود', en: 'Invoice date is missing' },
+  MISSING_CURRENCY: { ar: 'العملة غير موجودة', en: 'Currency is missing' },
+  MISSING_GRAND_TOTAL: { ar: 'الإجمالي النهائي غير موجود', en: 'Grand total is missing' },
+  TOTAL_MISMATCH: { ar: 'الإجماليات المستخرجة غير متطابقة', en: 'Extracted totals do not match' },
+};
 
 export const DocumentIntelligencePage: React.FC = () => {
   const { language, t } = useI18n();
@@ -95,6 +116,10 @@ export const DocumentIntelligencePage: React.FC = () => {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
+
+  const invoice = getStructuredInvoice(job);
+  const displayValue = (value: string | null | undefined) => value ?? (language === 'ar' ? 'غير موجود' : 'Not found');
+  const warningLabel = (warning: string) => invoiceWarningLabels[warning]?.[language] ?? warning;
 
   return (
     <div className="space-y-6 animate-fadeIn">
@@ -218,6 +243,92 @@ export const DocumentIntelligencePage: React.FC = () => {
                       <dd className="font-mono text-primary break-all mt-1">{job.upload.sha256}</dd>
                     </div>
                   </dl>
+
+                  {job.extraction.status === 'ready' && invoice && (
+                    <section className="space-y-4 rounded-xl border border-outline-variant bg-slate-50/60 p-4" aria-labelledby="structured-invoice-title">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h2 id="structured-invoice-title" className="font-bold text-primary">
+                            {language === 'ar' ? 'بيانات الفاتورة المنظمة' : 'Structured invoice data'}
+                          </h2>
+                          <p className="mt-1 text-[11px] text-slate-500">
+                            {language === 'ar'
+                              ? 'حقول مستخرجة بالذكاء الاصطناعي وليست اعتماداً محاسبياً؛ راجعها قبل الاستخدام.'
+                              : 'AI-extracted fields, not accounting approval. Review them before use.'}
+                          </p>
+                        </div>
+                        <Badge variant={invoice.reviewRequired ? 'warning' : 'success'} size="sm">
+                          {invoice.reviewRequired
+                            ? (language === 'ar' ? 'تحتاج مراجعة بشرية' : 'Human review required')
+                            : (language === 'ar' ? 'جاهزة للمراجعة' : 'Ready for review')}
+                        </Badge>
+                      </div>
+
+                      {invoice.validationWarnings.length > 0 && (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                          <div className="font-bold">{language === 'ar' ? 'تنبيهات التحقق' : 'Validation warnings'}</div>
+                          <ul className="mt-2 list-disc space-y-1 ps-5">
+                            {invoice.validationWarnings.map((warning) => (
+                              <li key={warning}>{warningLabel(warning)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                        {[
+                          [language === 'ar' ? 'المورد' : 'Supplier', invoice.supplierName],
+                          [language === 'ar' ? 'الرقم الضريبي' : 'Tax ID', invoice.supplierTaxId],
+                          [language === 'ar' ? 'رقم الفاتورة' : 'Invoice number', invoice.invoiceNumber],
+                          [language === 'ar' ? 'تاريخ الفاتورة' : 'Invoice date', invoice.invoiceDate],
+                          [language === 'ar' ? 'تاريخ الاستحقاق' : 'Due date', invoice.dueDate],
+                          [language === 'ar' ? 'العملة' : 'Currency', invoice.currency],
+                          [language === 'ar' ? 'المجموع الفرعي' : 'Subtotal', invoice.subtotal],
+                          [language === 'ar' ? 'الضريبة' : 'Tax total', invoice.taxTotal],
+                          [language === 'ar' ? 'الإجمالي النهائي' : 'Grand total', invoice.grandTotal],
+                        ].map(([label, value]) => (
+                          <div key={label} className="rounded-lg border border-outline-variant bg-white p-3">
+                            <dt className="text-slate-500">{label}</dt>
+                            <dd className="mt-1 break-words font-semibold text-primary">{displayValue(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+
+                      <div className="overflow-x-auto rounded-lg border border-outline-variant bg-white">
+                        <table className="w-full min-w-[680px] text-xs">
+                          <caption className="p-3 text-start font-bold text-primary">
+                            {language === 'ar' ? 'بنود الفاتورة المستخرجة' : 'Extracted line items'}
+                          </caption>
+                          <thead className="border-y border-slate-200 bg-slate-50 text-slate-600">
+                            <tr>
+                              <th className="p-3 text-start">{language === 'ar' ? 'الوصف' : 'Description'}</th>
+                              <th className="p-3 text-start">{language === 'ar' ? 'الكمية' : 'Quantity'}</th>
+                              <th className="p-3 text-start">{language === 'ar' ? 'سعر الوحدة' : 'Unit price'}</th>
+                              <th className="p-3 text-start">{language === 'ar' ? 'الضريبة' : 'Tax'}</th>
+                              <th className="p-3 text-start">{language === 'ar' ? 'الإجمالي' : 'Total'}</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {invoice.lineItems.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} className="p-4 text-center text-slate-500">
+                                  {language === 'ar' ? 'لم تُستخرج بنود مفصلة.' : 'No detailed line items were extracted.'}
+                                </td>
+                              </tr>
+                            ) : invoice.lineItems.map((item, index) => (
+                              <tr key={index}>
+                                <td className="p-3 font-medium text-primary">{item.description}</td>
+                                <td className="p-3">{displayValue(item.quantity)}</td>
+                                <td className="p-3">{displayValue(item.unitPrice)}</td>
+                                <td className="p-3">{displayValue(item.taxAmount)}</td>
+                                <td className="p-3">{displayValue(item.lineTotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </section>
+                  )}
 
                   {job.extraction.status === 'ready' && job.extraction.markdown && (
                     <div className="space-y-2">
