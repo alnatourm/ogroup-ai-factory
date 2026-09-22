@@ -1,4 +1,5 @@
 import type { AcceptedMediaType, ProviderConnection } from './types.js';
+import { parseStructuredInvoice, type StructuredInvoice } from './structured-invoice.js';
 
 export const MAX_INLINE_OCR_BYTES = 10 * 1024 * 1024;
 const MAX_OCR_ATTEMPTS = 4;
@@ -54,8 +55,10 @@ export type DocumentOcrResult = {
   engineVersion: string;
   markdown: string;
   structuredJson: {
-    schemaVersion: 'document-extraction-json-v1';
+    schemaVersion: 'document-extraction-json-v2';
     textDirection: 'rtl' | 'ltr' | 'mixed';
+    documentType: 'invoice' | 'other';
+    invoice: StructuredInvoice | null;
     entities: DocumentOcrEntity[];
   };
   language: string;
@@ -161,12 +164,25 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
     return { label: item.label, value: item.value, confidence: item.confidence };
   });
 
+  if (!['invoice', 'other'].includes(record.documentType as string)) {
+    throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+  }
+  const documentType = record.documentType as 'invoice' | 'other';
+  if (documentType === 'other' && record.invoice !== null) {
+    throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+  }
+  const invoice = documentType === 'invoice'
+    ? parseStructuredInvoice(record.invoice)
+    : null;
+
   return {
-    engineVersion: `gemini-interactions-prompt-json-v1:${model}`,
+    engineVersion: `gemini-interactions-prompt-json-v2:${model}`,
     markdown: record.markdown,
     structuredJson: {
-      schemaVersion: 'document-extraction-json-v1',
+      schemaVersion: 'document-extraction-json-v2',
       textDirection: record.textDirection as 'rtl' | 'ltr' | 'mixed',
+      documentType,
+      invoice,
       entities,
     },
     language: record.language,
@@ -218,9 +234,16 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
             'Extract this document faithfully.',
             'Preserve Arabic right-to-left reading order and document structure in markdown.',
             'Do not infer missing values. Return only values visibly supported by the document.',
-            'Return only one valid JSON object with no markdown fence and exactly these fields:',
-            'markdown (non-empty string), language (short language code), pageCount (integer 1-1000),',
-            'textDirection (rtl, ltr, or mixed), and entities (array of objects with label, value, confidence from 0 to 1).',
+            'Return only one valid JSON object with no markdown fence.',
+            'Top-level fields: markdown, language, pageCount, textDirection, documentType, invoice, entities.',
+            'documentType must be invoice or other. For other documents invoice must be null.',
+            'For invoices, invoice must contain exactly: supplierName, supplierTaxId, invoiceNumber, invoiceDate, dueDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+            'Use null for missing invoice values; never guess. Normalize dates to YYYY-MM-DD only when visibly supported.',
+            'Normalize currency to a three-letter uppercase code only when supported. Normalize amounts and quantities to decimal strings with no currency symbols or grouping separators.',
+            'confidence must contain the same nine scalar field names with a number from 0 to 1, or null when the value is null.',
+            'Each lineItems entry must contain description, quantity, unitPrice, taxAmount, lineTotal; use null for missing numeric values.',
+            'entities must remain an array of objects with label, value, confidence from 0 to 1.',
+            'markdown must be non-empty; language is a short code; pageCount is integer 1-1000; textDirection is rtl, ltr, or mixed.',
           ].join(' '),
         },
       ],
