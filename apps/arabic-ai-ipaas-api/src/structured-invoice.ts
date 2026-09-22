@@ -66,7 +66,17 @@ function nullableDecimal(value: unknown): string | null {
 function nullableDate(value: unknown): string | null {
   const parsed = nullableString(value, 10);
   if (parsed === null) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed) || Number.isNaN(Date.parse(`${parsed}T00:00:00Z`))) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parsed);
+  if (!match) throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
     throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
   }
   return parsed;
@@ -109,8 +119,10 @@ function parseLineItems(value: unknown): InvoiceLineItem[] {
       throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
     }
     const record = item as Record<string, unknown>;
+    const description = nullableString(record.description, 2_000);
+    if (description === null) throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
     return {
-      description: nullableString(record.description, 2_000) ?? (() => { throw new Error('OCR_PROVIDER_INVALID_RESPONSE'); })(),
+      description,
       quantity: nullableDecimal(record.quantity),
       unitPrice: nullableDecimal(record.unitPrice),
       taxAmount: nullableDecimal(record.taxAmount),
