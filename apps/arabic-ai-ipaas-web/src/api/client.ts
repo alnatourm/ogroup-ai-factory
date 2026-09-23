@@ -637,6 +637,56 @@ export class ArabicAiIpaasClient {
     };
   }
 
+  /** Save a tenant-scoped human invoice review without mutating the AI extraction. */
+  static async saveDocumentReview(documentId: string, invoice: StructuredInvoice): Promise<DocumentReviewRecord> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/review`, {
+      method: 'PUT',
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+      body: JSON.stringify({ invoice }),
+    });
+    if (!response.ok) await throwResponseError(response, `DOCUMENT_REVIEW_SAVE_FAILED_${response.status}`);
+    return ((await response.json()) as { data: DocumentReviewRecord }).data;
+  }
+
+  /** Approve the reviewed invoice and persist an immutable SHA-256 approval digest. */
+  static async approveDocumentReview(documentId: string, invoice: StructuredInvoice): Promise<DocumentReviewRecord> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/approve`, {
+      method: 'POST',
+      headers: buildHeaders(config),
+      credentials: 'same-origin',
+      body: JSON.stringify({ invoice }),
+    });
+    if (!response.ok) await throwResponseError(response, `DOCUMENT_REVIEW_APPROVAL_FAILED_${response.status}`);
+    return ((await response.json()) as { data: DocumentReviewRecord }).data;
+  }
+
+  /** Download the approved, verified invoice JSON artifact. */
+  static async downloadVerifiedInvoice(documentId: string, filename: string): Promise<void> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/verified-json`,
+      { headers: buildHeaders(config), credentials: 'same-origin' },
+    );
+    if (!response.ok) await throwResponseError(response, `VERIFIED_JSON_EXPORT_FAILED_${response.status}`);
+    const payload = await response.json();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const anchor = window.document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `${filename.replace(/\.[^.]+$/, '')}.verified.json`;
+      anchor.rel = 'noopener';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   /**
    * Get truthful usage and reliability metrics from the live control API.
    */
