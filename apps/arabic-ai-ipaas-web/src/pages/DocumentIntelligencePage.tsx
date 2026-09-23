@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob, DocumentRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
@@ -39,6 +39,10 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [reviewInvoice, setReviewInvoice] = useState<StructuredInvoice | null>(null);
+  const [reviewRecord, setReviewRecord] = useState<DocumentReviewRecord | null>(null);
+  const [reviewBusy, setReviewBusy] = useState<'save' | 'approve' | 'export' | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const describeDocumentError = (code: string) => {
     if (code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED') {
@@ -79,7 +83,11 @@ export const DocumentIntelligencePage: React.FC = () => {
     setError(null);
     setIsProcessing(true);
     try {
-      setJob(await ArabicAiIpaasClient.processDocument(file));
+      const processed = await ArabicAiIpaasClient.processDocument(file);
+      setJob(processed);
+      setReviewInvoice(getStructuredInvoice(processed));
+      setReviewRecord(null);
+      setReviewError(null);
       await refreshHistory();
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED';
@@ -124,6 +132,52 @@ export const DocumentIntelligencePage: React.FC = () => {
   };
 
   const invoice = getStructuredInvoice(job);
+
+  useEffect(() => {
+    if (invoice && !reviewInvoice) setReviewInvoice(invoice);
+  }, [invoice, reviewInvoice]);
+
+  const updateReviewField = (field: keyof Pick<StructuredInvoice, 'supplierName' | 'supplierTaxId' | 'invoiceNumber' | 'invoiceDate' | 'dueDate' | 'currency' | 'subtotal' | 'taxTotal' | 'grandTotal'>, value: string) => {
+    setReviewInvoice((current) => current ? { ...current, [field]: value.trim() === '' ? null : value } : current);
+    setReviewRecord(null);
+  };
+
+  const updateLineItem = (index: number, field: 'description' | 'quantity' | 'unitPrice' | 'taxAmount' | 'lineTotal', value: string) => {
+    setReviewInvoice((current) => current ? {
+      ...current,
+      lineItems: current.lineItems.map((item, itemIndex) => itemIndex === index
+        ? { ...item, [field]: field === 'description' ? value : (value.trim() === '' ? null : value) }
+        : item),
+    } : current);
+    setReviewRecord(null);
+  };
+
+  const handleSaveReview = async () => {
+    if (!job || !reviewInvoice) return;
+    setReviewBusy('save'); setReviewError(null);
+    try { setReviewRecord(await ArabicAiIpaasClient.saveDocumentReview(job.document.id, reviewInvoice)); }
+    catch (caught) { setReviewError(caught instanceof Error ? caught.message : 'DOCUMENT_REVIEW_SAVE_FAILED'); }
+    finally { setReviewBusy(null); }
+  };
+
+  const handleApproveReview = async () => {
+    if (!job || !reviewInvoice) return;
+    setReviewBusy('approve'); setReviewError(null);
+    try {
+      const approved = await ArabicAiIpaasClient.approveDocumentReview(job.document.id, reviewInvoice);
+      setReviewRecord(approved);
+      setReviewInvoice(approved.reviewedJson);
+    } catch (caught) { setReviewError(caught instanceof Error ? caught.message : 'DOCUMENT_REVIEW_APPROVAL_FAILED'); }
+    finally { setReviewBusy(null); }
+  };
+
+  const handleExportVerified = async () => {
+    if (!job || reviewRecord?.status !== 'approved') return;
+    setReviewBusy('export'); setReviewError(null);
+    try { await ArabicAiIpaasClient.downloadVerifiedInvoice(job.document.id, job.document.filename); }
+    catch (caught) { setReviewError(caught instanceof Error ? caught.message : 'VERIFIED_JSON_EXPORT_FAILED'); }
+    finally { setReviewBusy(null); }
+  };
   const displayValue = (value: string | null | undefined) => value ?? (language === 'ar' ? 'غير موجود' : 'Not found');
   const warningLabel = (warning: string) => invoiceWarningLabels[warning]?.[language] ?? warning;
 
@@ -281,24 +335,55 @@ export const DocumentIntelligencePage: React.FC = () => {
                         </div>
                       )}
 
-                      <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                        {[
-                          [language === 'ar' ? 'المورد' : 'Supplier', invoice.supplierName],
-                          [language === 'ar' ? 'الرقم الضريبي' : 'Tax ID', invoice.supplierTaxId],
-                          [language === 'ar' ? 'رقم الفاتورة' : 'Invoice number', invoice.invoiceNumber],
-                          [language === 'ar' ? 'تاريخ الفاتورة' : 'Invoice date', invoice.invoiceDate],
-                          [language === 'ar' ? 'تاريخ الاستحقاق' : 'Due date', invoice.dueDate],
-                          [language === 'ar' ? 'العملة' : 'Currency', invoice.currency],
-                          [language === 'ar' ? 'المجموع الفرعي' : 'Subtotal', invoice.subtotal],
-                          [language === 'ar' ? 'الضريبة' : 'Tax total', invoice.taxTotal],
-                          [language === 'ar' ? 'الإجمالي النهائي' : 'Grand total', invoice.grandTotal],
-                        ].map(([label, value]) => (
-                          <div key={label} className="rounded-lg border border-outline-variant bg-white p-3">
-                            <dt className="text-slate-500">{label}</dt>
-                            <dd className="mt-1 break-words font-semibold text-primary">{displayValue(value)}</dd>
+                      {reviewInvoice && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                            {([
+                              ['supplierName', language === 'ar' ? 'المورد' : 'Supplier'],
+                              ['supplierTaxId', language === 'ar' ? 'الرقم الضريبي' : 'Tax ID'],
+                              ['invoiceNumber', language === 'ar' ? 'رقم الفاتورة' : 'Invoice number'],
+                              ['invoiceDate', language === 'ar' ? 'تاريخ الفاتورة YYYY-MM-DD' : 'Invoice date YYYY-MM-DD'],
+                              ['dueDate', language === 'ar' ? 'تاريخ الاستحقاق YYYY-MM-DD' : 'Due date YYYY-MM-DD'],
+                              ['currency', language === 'ar' ? 'العملة ISO' : 'Currency ISO'],
+                              ['subtotal', language === 'ar' ? 'المجموع الفرعي' : 'Subtotal'],
+                              ['taxTotal', language === 'ar' ? 'الضريبة' : 'Tax total'],
+                              ['grandTotal', language === 'ar' ? 'الإجمالي النهائي' : 'Grand total'],
+                            ] as const).map(([field, label]) => (
+                              <label key={field} className="rounded-lg border border-outline-variant bg-white p-3">
+                                <span className="block text-slate-500 mb-1">{label}</span>
+                                <input
+                                  value={reviewInvoice[field] ?? ''}
+                                  onChange={(event) => updateReviewField(field, event.target.value)}
+                                  disabled={reviewRecord?.status === 'approved'}
+                                  className="w-full rounded-md border border-slate-200 px-2 py-1.5 font-semibold text-primary disabled:bg-slate-100"
+                                />
+                              </label>
+                            ))}
                           </div>
-                        ))}
-                      </dl>
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => void handleSaveReview()} disabled={!!reviewBusy || reviewRecord?.status === 'approved'} className="px-4 py-2 rounded-lg border border-secondary text-secondary text-xs font-bold disabled:opacity-50">
+                              {reviewBusy === 'save' ? (language === 'ar' ? 'جارٍ الحفظ...' : 'Saving...') : (language === 'ar' ? 'حفظ المراجعة' : 'Save review')}
+                            </button>
+                            <button type="button" onClick={() => void handleApproveReview()} disabled={!!reviewBusy || reviewRecord?.status === 'approved'} className="px-4 py-2 rounded-lg bg-primary text-white text-xs font-bold disabled:opacity-50">
+                              {reviewBusy === 'approve' ? (language === 'ar' ? 'جارٍ الاعتماد...' : 'Approving...') : (language === 'ar' ? 'اعتماد الفاتورة' : 'Approve invoice')}
+                            </button>
+                            {reviewRecord?.status === 'approved' && (
+                              <button type="button" onClick={() => void handleExportVerified()} disabled={!!reviewBusy} className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-xs font-bold disabled:opacity-50">
+                                {reviewBusy === 'export' ? (language === 'ar' ? 'جارٍ التصدير...' : 'Exporting...') : (language === 'ar' ? 'تصدير JSON الموثق' : 'Export verified JSON')}
+                              </button>
+                            )}
+                          </div>
+                          {reviewRecord && (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                              {reviewRecord.status === 'approved'
+                                ? (language === 'ar' ? 'تم الاعتماد البشري وحفظ بصمة SHA-256 دون تعديل نتيجة الذكاء الاصطناعي الأصلية.' : 'Human approval recorded with a SHA-256 digest; the original AI extraction remains unchanged.')
+                                : (language === 'ar' ? 'تم حفظ المراجعة كمسودة جديدة.' : 'Review saved as a new draft record.')}
+                              {reviewRecord.approvalDigest && <div className="mt-1 break-all font-mono">{reviewRecord.approvalDigest}</div>}
+                            </div>
+                          )}
+                          {reviewError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{reviewError}</div>}
+                        </div>
+                      )}
 
                       <div className="overflow-x-auto rounded-lg border border-outline-variant bg-white">
                         <table className="w-full min-w-[680px] text-xs">
@@ -323,11 +408,10 @@ export const DocumentIntelligencePage: React.FC = () => {
                               </tr>
                             ) : invoice.lineItems.map((item, index) => (
                               <tr key={index}>
-                                <td className="p-3 font-medium text-primary">{item.description}</td>
-                                <td className="p-3">{displayValue(item.quantity)}</td>
-                                <td className="p-3">{displayValue(item.unitPrice)}</td>
-                                <td className="p-3">{displayValue(item.taxAmount)}</td>
-                                <td className="p-3">{displayValue(item.lineTotal)}</td>
+                                <td className="p-2"><input aria-label="description" value={reviewInvoice?.lineItems[index]?.description ?? item.description} onChange={(e) => updateLineItem(index, 'description', e.target.value)} disabled={reviewRecord?.status === 'approved'} className="w-full rounded border border-slate-200 p-2 disabled:bg-slate-100" /></td>
+                                {(['quantity', 'unitPrice', 'taxAmount', 'lineTotal'] as const).map((field) => (
+                                  <td key={field} className="p-2"><input aria-label={field} value={reviewInvoice?.lineItems[index]?.[field] ?? ''} onChange={(e) => updateLineItem(index, field, e.target.value)} disabled={reviewRecord?.status === 'approved'} className="w-full rounded border border-slate-200 p-2 disabled:bg-slate-100" /></td>
+                                ))}
                               </tr>
                             ))}
                           </tbody>
