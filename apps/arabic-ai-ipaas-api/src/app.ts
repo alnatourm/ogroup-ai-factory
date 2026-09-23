@@ -14,6 +14,12 @@ import {
   type DocumentRepository,
 } from './document-service.js';
 import {
+  createApprovalDigest,
+  createVerifiedInvoiceExport,
+  parseReviewInvoice,
+  requireApprovableInvoice,
+} from './document-review.js';
+import {
   MemoryDocumentContentStore,
   validateDocumentContent,
   type DocumentContentStore,
@@ -520,7 +526,146 @@ export function createApp(options: {
         return;
       }
       const extraction = await documentRepository.getExtraction(workspaceId, document.id);
-      res.json({ data: { document, extraction: extraction ?? null } });
+      const review = await documentRepository.getLatestReview(workspaceId, document.id);
+      res.json({ data: { document, extraction: extraction ?? null, review: review ?? null } });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.put('/v1/documents/:id/review', requireWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const documentId = getPathId(req);
+      const document = await documentRepository.get(context.workspaceId, documentId);
+      if (!document) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const extraction = await documentRepository.getExtraction(context.workspaceId, documentId);
+      if (!extraction || extraction.status !== 'ready') {
+        res.status(409).json({ error: 'DOCUMENT_EXTRACTION_NOT_READY' });
+        return;
+      }
+      const invoice = parseReviewInvoice(req.body?.invoice);
+      const review = await documentRepository.createReview({
+        workspaceId: context.workspaceId,
+        documentId,
+        extractionId: extraction.id,
+        status: 'draft',
+        reviewedJson: invoice as unknown as Record<string, unknown>,
+        reviewedBy: context.userId,
+      });
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.review_saved',
+        entityType: 'document_review',
+        entityId: review.id,
+        metadata: {
+          documentId,
+          extractionId: extraction.id,
+          status: review.status,
+          validationWarningCount: invoice.validationWarnings.length,
+        },
+      });
+      res.json({ data: review });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/documents/:id/approve', requireWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const documentId = getPathId(req);
+      const document = await documentRepository.get(context.workspaceId, documentId);
+      if (!document) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const extraction = await documentRepository.getExtraction(context.workspaceId, documentId);
+      if (!extraction || extraction.status !== 'ready') {
+        res.status(409).json({ error: 'DOCUMENT_EXTRACTION_NOT_READY' });
+        return;
+      }
+      const latestReview = await documentRepository.getLatestReview(context.workspaceId, documentId);
+      const structured = extraction.structuredJson;
+      const extractedInvoice = structured?.schemaVersion === 'document-extraction-json-v2' &&
+        structured.documentType === 'invoice'
+        ? structured.invoice
+        : undefined;
+      const invoice = parseReviewInvoice(req.body?.invoice ?? latestReview?.reviewedJson ?? extractedInvoice);
+      requireApprovableInvoice(invoice);
+      const approvalDigest = createApprovalDigest({
+        documentId,
+        extractionId: extraction.id,
+        invoice,
+      });
+      const review = await documentRepository.createReview({
+        workspaceId: context.workspaceId,
+        documentId,
+        extractionId: extraction.id,
+        status: 'approved',
+        reviewedJson: invoice as unknown as Record<string, unknown>,
+        reviewedBy: context.userId,
+        approvalDigest,
+      });
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.review_approved',
+        entityType: 'document_review',
+        entityId: review.id,
+        metadata: {
+          documentId,
+          extractionId: extraction.id,
+          approvalDigest,
+        },
+      });
+      res.json({ data: review });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/documents/:id/verified-json', async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const documentId = getPathId(req);
+      const document = await documentRepository.get(context.workspaceId, documentId);
+      if (!document) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const review = await documentRepository.getLatestReview(context.workspaceId, documentId);
+      if (!review || review.status !== 'approved') {
+        res.status(409).json({ error: 'DOCUMENT_REVIEW_NOT_APPROVED' });
+        return;
+      }
+      const verified = createVerifiedInvoiceExport(document, review);
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.verified_json_exported',
+        entityType: 'document_review',
+        entityId: review.id,
+        metadata: {
+          documentId,
+          extractionId: review.extractionId,
+          approvalDigest: review.approvalDigest,
+        },
+      });
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="verified-invoice.json"; filename*=UTF-8''${encodeContentDispositionFilename(`${document.filename}.verified.json`)}`,
+      );
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.status(200).send(JSON.stringify(verified, null, 2));
     } catch (error) {
       next(error);
     }
@@ -796,6 +941,7 @@ export function createApp(options: {
       'DOCUMENT_SIZE_MISMATCH',
       'DOCUMENT_SIGNATURE_MISMATCH',
       'INVALID_DOCUMENT_CONTENT',
+      'INVALID_INVOICE_REVIEW',
     ]);
     if (badRequestCodes.has(code)) {
       res.status(400).json({ error: code });
@@ -829,7 +975,13 @@ export function createApp(options: {
       res.status(413).json({ error: 'FILE_TOO_LARGE' });
       return;
     }
-    if (code === 'EXPLICIT_OPT_IN_REQUIRED' || code === 'DOCUMENT_CONTENT_REQUIRED') {
+    if (
+      code === 'EXPLICIT_OPT_IN_REQUIRED' ||
+      code === 'DOCUMENT_CONTENT_REQUIRED' ||
+      code === 'DOCUMENT_EXTRACTION_NOT_READY' ||
+      code === 'INVOICE_REVIEW_VALIDATION_REQUIRED' ||
+      code === 'DOCUMENT_REVIEW_NOT_APPROVED'
+    ) {
       res.status(409).json({ error: code });
       return;
     }

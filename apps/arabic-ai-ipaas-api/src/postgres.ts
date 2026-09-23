@@ -6,6 +6,7 @@ import type {
   DataPolicyConfig,
   DocumentExtractionRecord,
   DocumentRecord,
+  DocumentReviewRecord,
   GatewayTraceRecord,
   ProviderConnection,
   ProviderType,
@@ -920,6 +921,91 @@ export class PostgresDocumentRepository implements DocumentRepository {
       createdAt: row.created_at.toISOString(),
     };
   }
+
+  async createReview(input: {
+    workspaceId: string;
+    documentId: string;
+    extractionId: string;
+    status: DocumentReviewRecord['status'];
+    reviewedJson: Record<string, unknown>;
+    reviewedBy: string;
+    approvalDigest?: string;
+  }): Promise<DocumentReviewRecord> {
+    const result = await this.pool.query<{
+      id: string;
+      workspace_id: string;
+      document_id: string;
+      extraction_id: string;
+      status: DocumentReviewRecord['status'];
+      reviewed_json: Record<string, unknown>;
+      reviewed_by: string;
+      approval_digest: string | null;
+      created_at: Date;
+    }>(
+      `insert into document_reviews
+        (workspace_id, document_id, extraction_id, status, reviewed_json, reviewed_by, approval_digest)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       returning *`,
+      [
+        input.workspaceId,
+        input.documentId,
+        input.extractionId,
+        input.status,
+        JSON.stringify(input.reviewedJson),
+        input.reviewedBy,
+        input.approvalDigest ?? null,
+      ],
+    );
+    const row = result.rows[0]!;
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      documentId: row.document_id,
+      extractionId: row.extraction_id,
+      status: row.status,
+      reviewedJson: row.reviewed_json,
+      reviewedBy: row.reviewed_by,
+      approvalDigest: row.approval_digest ?? undefined,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
+  async getLatestReview(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<DocumentReviewRecord | undefined> {
+    const result = await this.pool.query<{
+      id: string;
+      workspace_id: string;
+      document_id: string;
+      extraction_id: string;
+      status: DocumentReviewRecord['status'];
+      reviewed_json: Record<string, unknown>;
+      reviewed_by: string;
+      approval_digest: string | null;
+      created_at: Date;
+    }>(
+      `select * from document_reviews
+        where workspace_id = $1 and document_id = $2
+        order by created_at desc, id desc
+        limit 1`,
+      [workspaceId, documentId],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      workspaceId: row.workspace_id,
+      documentId: row.document_id,
+      extractionId: row.extraction_id,
+      status: row.status,
+      reviewedJson: row.reviewed_json,
+      reviewedBy: row.reviewed_by,
+      approvalDigest: row.approval_digest ?? undefined,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
 }
 
 export class PostgresTraceRepository implements TraceRepository {

@@ -3,6 +3,8 @@ import {
   type DataPolicyConfig,
   type DocumentProcessingJob,
   type DocumentRecord,
+  type DocumentReviewRecord,
+  type StructuredInvoice,
   type GatewayRequest,
   type GatewayResponse,
   type SafeProviderConnection,
@@ -461,6 +463,63 @@ export class ArabicAiIpaasClient {
     }
     const body = (await response.json()) as { data: DocumentRecord[] };
     return body.data;
+  }
+
+  /** Save a human-reviewed invoice without mutating the source extraction. */
+  static async saveDocumentReview(documentId: string, invoice: StructuredInvoice): Promise<DocumentReviewRecord> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/review`,
+      {
+        method: 'PUT',
+        headers: buildHeaders(config),
+        credentials: 'same-origin',
+        body: JSON.stringify({ invoice }),
+      },
+    );
+    if (!response.ok) await throwResponseError(response, `DOCUMENT_REVIEW_SAVE_FAILED_${response.status}`);
+    const body = (await response.json()) as { data: DocumentReviewRecord };
+    return body.data;
+  }
+
+  /** Approve a reviewed invoice and receive its immutable approval digest. */
+  static async approveDocumentReview(documentId: string, invoice: StructuredInvoice): Promise<DocumentReviewRecord> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/approve`,
+      {
+        method: 'POST',
+        headers: buildHeaders(config),
+        credentials: 'same-origin',
+        body: JSON.stringify({ invoice }),
+      },
+    );
+    if (!response.ok) await throwResponseError(response, `DOCUMENT_REVIEW_APPROVE_FAILED_${response.status}`);
+    const body = (await response.json()) as { data: DocumentReviewRecord };
+    return body.data;
+  }
+
+  /** Download the approved, verified JSON artifact for accounting/workflow handoff. */
+  static async downloadVerifiedInvoiceJson(document: DocumentRecord): Promise<void> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(document.id)}/verified-json`,
+      { headers: buildHeaders(config), credentials: 'same-origin' },
+    );
+    if (!response.ok) await throwResponseError(response, `VERIFIED_JSON_DOWNLOAD_FAILED_${response.status}`);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const anchor = window.document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `${document.filename}.verified.json`;
+      anchor.rel = 'noopener';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   }
 
   /**

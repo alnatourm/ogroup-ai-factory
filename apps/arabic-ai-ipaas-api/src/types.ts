@@ -198,6 +198,18 @@ export type DocumentExtractionRecord = {
   createdAt: string;
 };
 
+export type DocumentReviewRecord = {
+  id: string;
+  workspaceId: string;
+  documentId: string;
+  extractionId: string;
+  status: 'draft' | 'approved';
+  reviewedJson: Record<string, unknown>;
+  reviewedBy: string;
+  approvalDigest?: string;
+  createdAt: string;
+};
+
 /* Gateway Traces & Observability */
 export type GatewayTraceRecord = {
   id: string;

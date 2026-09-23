@@ -3,6 +3,7 @@ import type {
   AcceptedMediaType,
   DocumentExtractionRecord,
   DocumentRecord,
+  DocumentReviewRecord,
 } from './types.js';
 
 export const ACCEPTED_MEDIA_TYPES = new Set<AcceptedMediaType>([
@@ -72,11 +73,22 @@ export interface DocumentRepository {
     extraction: Omit<DocumentExtractionRecord, 'id' | 'workspaceId' | 'documentId' | 'createdAt'>,
   ): Promise<DocumentExtractionRecord>;
   getExtraction(workspaceId: string, documentId: string): Promise<DocumentExtractionRecord | undefined>;
+  createReview(input: {
+    workspaceId: string;
+    documentId: string;
+    extractionId: string;
+    status: DocumentReviewRecord['status'];
+    reviewedJson: Record<string, unknown>;
+    reviewedBy: string;
+    approvalDigest?: string;
+  }): Promise<DocumentReviewRecord>;
+  getLatestReview(workspaceId: string, documentId: string): Promise<DocumentReviewRecord | undefined>;
 }
 
 export class MemoryDocumentRepository implements DocumentRepository {
   private readonly documents = new Map<string, DocumentRecord>();
   private readonly extractions = new Map<string, DocumentExtractionRecord>();
+  private readonly reviews = new Map<string, DocumentReviewRecord[]>();
 
   async create(input: {
     workspaceId: string;
@@ -151,6 +163,40 @@ export class MemoryDocumentRepository implements DocumentRepository {
   async getExtraction(workspaceId: string, documentId: string): Promise<DocumentExtractionRecord | undefined> {
     const ext = this.extractions.get(documentId);
     return ext?.workspaceId === workspaceId ? ext : undefined;
+  }
+
+  async createReview(input: {
+    workspaceId: string;
+    documentId: string;
+    extractionId: string;
+    status: DocumentReviewRecord['status'];
+    reviewedJson: Record<string, unknown>;
+    reviewedBy: string;
+    approvalDigest?: string;
+  }): Promise<DocumentReviewRecord> {
+    const record: DocumentReviewRecord = {
+      id: crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+      extractionId: input.extractionId,
+      status: input.status,
+      reviewedJson: input.reviewedJson,
+      reviewedBy: input.reviewedBy,
+      ...(input.approvalDigest ? { approvalDigest: input.approvalDigest } : {}),
+      createdAt: new Date().toISOString(),
+    };
+    const reviews = this.reviews.get(input.documentId) ?? [];
+    reviews.push(record);
+    this.reviews.set(input.documentId, reviews);
+    return record;
+  }
+
+  async getLatestReview(
+    workspaceId: string,
+    documentId: string,
+  ): Promise<DocumentReviewRecord | undefined> {
+    const reviews = this.reviews.get(documentId) ?? [];
+    return [...reviews].reverse().find((review) => review.workspaceId === workspaceId);
   }
 }
 
