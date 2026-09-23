@@ -57,7 +57,7 @@ export const InvoiceReviewPanel: React.FC<Props> = ({ document, invoice }) => {
     setBusy(action);
     setError(null);
     try {
-      if (action === 'save') setReview(await ArabicAiIpaasClient.saveDocumentReview(document.id, draft));
+      if (action === 'save') { const saved = await ArabicAiIpaasClient.saveDocumentReview(document.id, draft); setReview(saved); setDraft(saved.reviewedJson); }
       if (action === 'approve') setReview(await ArabicAiIpaasClient.approveDocumentReview(document.id, draft));
       if (action === 'export') await ArabicAiIpaasClient.downloadVerifiedInvoiceJson(document);
     } catch (caught) {
