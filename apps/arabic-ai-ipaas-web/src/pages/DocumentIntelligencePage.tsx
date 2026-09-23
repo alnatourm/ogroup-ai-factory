@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob, DocumentRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
@@ -39,6 +39,8 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [persistedReview, setPersistedReview] = useState<DocumentReviewRecord | null>(null);
 
   const describeDocumentError = (code: string) => {
     if (code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED') {
@@ -76,6 +78,7 @@ export const DocumentIntelligencePage: React.FC = () => {
     const metadata = { name: file.name, size: file.size, type: file.type || 'application/pdf' };
     setSelectedFile(metadata);
     setJob(null);
+    setPersistedReview(null);
     setError(null);
     setIsProcessing(true);
     try {
@@ -87,6 +90,35 @@ export const DocumentIntelligencePage: React.FC = () => {
     } finally {
       setIsProcessing(false);
       event.target.value = '';
+    }
+  };
+
+  const handleOpenDocument = async (document: DocumentRecord) => {
+    setOpeningId(document.id);
+    setError(null);
+    try {
+      const detail = await ArabicAiIpaasClient.getDocument(document.id);
+      if (!detail.extraction) throw new Error('DOCUMENT_EXTRACTION_NOT_AVAILABLE');
+      setPersistedReview(detail.review);
+      setJob({
+        document: detail.document,
+        upload: {
+          workspaceId: detail.document.workspaceId,
+          documentId: detail.document.id,
+          mediaType: detail.document.mediaType,
+          sizeBytes: detail.document.sizeBytes,
+          sha256: detail.document.sha256 ?? '',
+          uploadedAt: detail.document.createdAt,
+        },
+        extraction: detail.extraction,
+        workerState: 'configured',
+        uploadConfigured: true,
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'DOCUMENT_DETAIL_FAILED');
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -338,7 +370,7 @@ export const DocumentIntelligencePage: React.FC = () => {
                   )}
 
                   {job.extraction.status === 'ready' && invoice && (
-                    <InvoiceReviewPanel document={job.document} invoice={invoice} />
+                    <InvoiceReviewPanel document={job.document} invoice={invoice} initialReview={persistedReview} />
                   )}
 
                   {job.extraction.status === 'ready' && job.extraction.markdown && (
@@ -418,6 +450,19 @@ export const DocumentIntelligencePage: React.FC = () => {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {(document.status === 'ready' || document.status === 'failed') && (
+                      <button
+                        type="button"
+                        onClick={() => void handleOpenDocument(document)}
+                        disabled={openingId === document.id}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold hover:opacity-90 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">visibility</span>
+                        {openingId === document.id
+                          ? (language === 'ar' ? 'جارٍ الفتح...' : 'Opening...')
+                          : (language === 'ar' ? 'فتح ومراجعة' : 'Open & review')}
+                      </button>
+                    )}
                     {document.status === 'failed' && (
                       <button
                         type="button"
