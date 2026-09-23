@@ -30,6 +30,9 @@ import {
   type DocumentOcrAdapter,
 } from './document-ocr-adapter.js';
 import { runDocumentOcr } from './document-ocr-service.js';
+import { comparePurchaseOrderToInvoice } from './document-match.js';
+import { parseStructuredInvoice } from './structured-invoice.js';
+import { parseStructuredPurchaseOrder } from './structured-purchase-order.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
 import { decryptSecret, encryptSecret, redactProvider, validateProviderBaseUrl } from './security.js';
@@ -666,6 +669,62 @@ export function createApp(options: {
       );
       res.setHeader('Cache-Control', 'private, no-store');
       res.status(200).send(JSON.stringify(verified, null, 2));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/v1/document-matches/po-invoice', requireWriteRole, async (req, res, next) => {
+    try {
+      const context = getContext(req);
+      const purchaseOrderDocumentId = typeof req.body?.purchaseOrderDocumentId === 'string' ? req.body.purchaseOrderDocumentId : '';
+      const invoiceDocumentId = typeof req.body?.invoiceDocumentId === 'string' ? req.body.invoiceDocumentId : '';
+      if (!purchaseOrderDocumentId || !invoiceDocumentId || purchaseOrderDocumentId === invoiceDocumentId) {
+        res.status(400).json({ error: 'INVALID_DOCUMENT_MATCH_REQUEST' });
+        return;
+      }
+      const [poDocument, invoiceDocument] = await Promise.all([
+        documentRepository.get(context.workspaceId, purchaseOrderDocumentId),
+        documentRepository.get(context.workspaceId, invoiceDocumentId),
+      ]);
+      if (!poDocument || !invoiceDocument) {
+        res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+        return;
+      }
+      const [poExtraction, invoiceExtraction] = await Promise.all([
+        documentRepository.getExtraction(context.workspaceId, purchaseOrderDocumentId),
+        documentRepository.getExtraction(context.workspaceId, invoiceDocumentId),
+      ]);
+      if (!poExtraction || !invoiceExtraction || poExtraction.status !== 'ready' || invoiceExtraction.status !== 'ready') {
+        res.status(409).json({ error: 'DOCUMENT_EXTRACTION_NOT_READY' });
+        return;
+      }
+      const poStructured = poExtraction.structuredJson;
+      const invoiceStructured = invoiceExtraction.structuredJson;
+      if (poStructured?.schemaVersion !== 'document-extraction-json-v2' || poStructured.documentType !== 'purchase_order' ||
+          invoiceStructured?.schemaVersion !== 'document-extraction-json-v2' || invoiceStructured.documentType !== 'invoice') {
+        res.status(409).json({ error: 'DOCUMENT_TYPES_NOT_MATCHABLE' });
+        return;
+      }
+      const purchaseOrder = parseStructuredPurchaseOrder(poStructured.purchaseOrder);
+      const invoice = parseStructuredInvoice(invoiceStructured.invoice);
+      const match = comparePurchaseOrderToInvoice(purchaseOrder, invoice);
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.po_invoice_compared',
+        entityType: 'document_match',
+        entityId: `${purchaseOrderDocumentId}:${invoiceDocumentId}`,
+        metadata: {
+          purchaseOrderDocumentId,
+          invoiceDocumentId,
+          status: match.status,
+          score: match.score,
+          findingCodes: match.findings.map((finding) => finding.code),
+        },
+      });
+      res.json({ data: { purchaseOrderDocumentId, invoiceDocumentId, match } });
     } catch (error) {
       next(error);
     }
