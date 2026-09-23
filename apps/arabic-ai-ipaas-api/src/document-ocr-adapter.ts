@@ -1,5 +1,6 @@
 import type { AcceptedMediaType, ProviderConnection } from './types.js';
 import { parseStructuredInvoice, type StructuredInvoice } from './structured-invoice.js';
+import { parseStructuredPurchaseOrder, type StructuredPurchaseOrder } from './structured-purchase-order.js';
 
 export const MAX_INLINE_OCR_BYTES = 10 * 1024 * 1024;
 const MAX_OCR_ATTEMPTS = 4;
@@ -57,8 +58,9 @@ export type DocumentOcrResult = {
   structuredJson: {
     schemaVersion: 'document-extraction-json-v2';
     textDirection: 'rtl' | 'ltr' | 'mixed';
-    documentType: 'invoice' | 'other';
+    documentType: 'invoice' | 'purchase_order' | 'other';
     invoice: StructuredInvoice | null;
+    purchaseOrder: StructuredPurchaseOrder | null;
     entities: DocumentOcrEntity[];
   };
   language: string;
@@ -181,15 +183,19 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
     return { label: item.label, value: item.value, confidence: item.confidence };
   });
 
-  if (!['invoice', 'other'].includes(record.documentType as string)) {
+  if (!['invoice', 'purchase_order', 'other'].includes(record.documentType as string)) {
     throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
   }
-  const documentType = record.documentType as 'invoice' | 'other';
-  if (documentType === 'other' && record.invoice !== null) {
+  const documentType = record.documentType as 'invoice' | 'purchase_order' | 'other';
+  if (documentType !== 'invoice' && record.invoice !== null) {
     throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
   }
-  const invoice = documentType === 'invoice'
-    ? parseStructuredInvoice(record.invoice)
+  const invoice = documentType === 'invoice' ? parseStructuredInvoice(record.invoice) : null;
+  if (documentType !== 'purchase_order' && record.purchaseOrder !== null && record.purchaseOrder !== undefined) {
+    throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+  }
+  const purchaseOrder = documentType === 'purchase_order'
+    ? parseStructuredPurchaseOrder(record.purchaseOrder)
     : null;
 
   return {
@@ -200,6 +206,7 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
       textDirection: record.textDirection as 'rtl' | 'ltr' | 'mixed',
       documentType,
       invoice,
+      purchaseOrder,
       entities,
     },
     language: record.language,
@@ -252,9 +259,11 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
             'Preserve Arabic right-to-left reading order and document structure in markdown.',
             'Do not infer missing values. Return only values visibly supported by the document.',
             'Return only one valid JSON object with no markdown fence.',
-            'Top-level fields: markdown, language, pageCount, textDirection, documentType, invoice, entities.',
-            'documentType must be invoice or other. For other documents invoice must be null.',
+            'Top-level fields: markdown, language, pageCount, textDirection, documentType, invoice, purchaseOrder, entities.',
+            'documentType must be invoice, purchase_order, or other. invoice must be non-null only for invoices; purchaseOrder must be non-null only for purchase orders.',
             'For invoices, invoice must contain exactly: supplierName, supplierTaxId, invoiceNumber, invoiceDate, dueDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+            'For purchase orders, purchaseOrder must contain exactly: supplierName, supplierTaxId, purchaseOrderNumber, orderDate, expectedDeliveryDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+            'Purchase order confidence must contain those same nine scalar field names. Each purchase order line item must contain description, quantity, unitPrice, lineTotal.',
             'Use null for missing invoice values; never guess. Normalize dates to YYYY-MM-DD only when visibly supported.',
             'Normalize currency to a three-letter uppercase code only when supported. Normalize amounts and quantities to decimal strings with no currency symbols or grouping separators.',
             'confidence must contain the same nine scalar field names with a number from 0 to 1, or null when the value is null.',
