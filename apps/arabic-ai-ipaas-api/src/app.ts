@@ -814,7 +814,10 @@ export function createApp(options: {
       res.status(409).json({ error: code });
       return;
     }
-    if (code === 'OCR_PROVIDER_HTTP_429') {
+    if (
+      code === 'OCR_PROVIDER_HTTP_429' ||
+      code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED'
+    ) {
       res.status(429).json({ error: code });
       return;
     }
