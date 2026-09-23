@@ -31,6 +31,7 @@ import {
 } from './document-ocr-adapter.js';
 import { runDocumentOcr } from './document-ocr-service.js';
 import { comparePurchaseOrderToInvoice } from './document-match.js';
+import { MemoryMatchDecisionRepository, parseMatchDecision, type MatchDecisionRepository } from './document-match-decision.js';
 import { parseStructuredInvoice } from './structured-invoice.js';
 import { parseStructuredPurchaseOrder } from './structured-purchase-order.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
@@ -213,6 +214,7 @@ export function createApp(options: {
   documentContentStore?: DocumentContentStore;
   documentOcrAdapter?: DocumentOcrAdapter;
   traceRepository?: TraceRepository;
+  matchDecisionRepository?: MatchDecisionRepository;
   adapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
   browserSessionVerifier?: BrowserSessionVerifier;
@@ -228,6 +230,7 @@ export function createApp(options: {
   const documentContentStore = options.documentContentStore ?? new MemoryDocumentContentStore();
   const documentOcrAdapter = options.documentOcrAdapter ?? new GeminiDocumentOcrAdapter();
   const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
+  const matchDecisionRepository = options.matchDecisionRepository ?? new MemoryMatchDecisionRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
   const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
 
@@ -728,6 +731,46 @@ export function createApp(options: {
     } catch (error) {
       next(error);
     }
+  });
+
+  app.post('/v1/document-matches/po-invoice/decision', requireWriteRole, async (req, res, next) => {
+    try {
+      const context=getContext(req);
+      const purchaseOrderDocumentId=typeof req.body?.purchaseOrderDocumentId==='string'?req.body.purchaseOrderDocumentId:'';
+      const invoiceDocumentId=typeof req.body?.invoiceDocumentId==='string'?req.body.invoiceDocumentId:'';
+      if(!purchaseOrderDocumentId||!invoiceDocumentId||purchaseOrderDocumentId===invoiceDocumentId){
+        res.status(400).json({error:'INVALID_DOCUMENT_MATCH_REQUEST'}); return;
+      }
+      const [poDocument,invoiceDocument]=await Promise.all([
+        documentRepository.get(context.workspaceId,purchaseOrderDocumentId),
+        documentRepository.get(context.workspaceId,invoiceDocumentId),
+      ]);
+      if(!poDocument||!invoiceDocument){res.status(404).json({error:'DOCUMENT_NOT_FOUND'});return;}
+      const parsed=parseMatchDecision(req.body);
+      const decision=await matchDecisionRepository.create({
+        workspaceId:context.workspaceId,purchaseOrderDocumentId,invoiceDocumentId,
+        decision:parsed.decision,reason:parsed.reason,decidedBy:context.userId,
+      });
+      await auditRepository.record({
+        workspaceId:context.workspaceId,actorUserId:context.userId,actorType:'user',
+        action:'document.po_invoice_decision_recorded',entityType:'document_match_decision',entityId:decision.id,
+        metadata:{purchaseOrderDocumentId,invoiceDocumentId,decision:decision.decision},
+      });
+      res.status(201).json({data:decision});
+    } catch(error){next(error);}
+  });
+
+  app.get('/v1/document-matches/po-invoice/decision', async (req,res,next)=>{
+    try{
+      const context=getContext(req);
+      const po=typeof req.query.purchaseOrderDocumentId==='string'?req.query.purchaseOrderDocumentId:'';
+      const invoice=typeof req.query.invoiceDocumentId==='string'?req.query.invoiceDocumentId:'';
+      if(!po||!invoice){res.status(400).json({error:'INVALID_DOCUMENT_MATCH_REQUEST'});return;}
+      const [poDocument,invoiceDocument]=await Promise.all([documentRepository.get(context.workspaceId,po),documentRepository.get(context.workspaceId,invoice)]);
+      if(!poDocument||!invoiceDocument){res.status(404).json({error:'DOCUMENT_NOT_FOUND'});return;}
+      const decision=await matchDecisionRepository.getLatest(context.workspaceId,po,invoice);
+      res.json({data:decision??null});
+    }catch(error){next(error);}
   });
 
   app.get('/v1/documents/:id/content', async (req, res, next) => {
