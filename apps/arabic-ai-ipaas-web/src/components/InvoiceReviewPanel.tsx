@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArabicAiIpaasClient } from '../api/client.js';
 import type { DocumentRecord, DocumentReviewRecord, StructuredInvoice } from '../types/api.js';
 import { useI18n } from '../i18n/I18nContext.js';
@@ -7,6 +7,7 @@ import { Badge } from './common/Badge.js';
 type Props = {
   document: DocumentRecord;
   invoice: StructuredInvoice;
+  initialReview?: DocumentReviewRecord | null;
 };
 
 const scalarFields = [
@@ -21,14 +22,20 @@ const scalarFields = [
   ['grandTotal', 'الإجمالي النهائي', 'Grand total'],
 ] as const;
 
-export const InvoiceReviewPanel: React.FC<Props> = ({ document, invoice }) => {
+export const InvoiceReviewPanel: React.FC<Props> = ({ document, invoice, initialReview = null }) => {
   const { language } = useI18n();
-  const [draft, setDraft] = useState<StructuredInvoice>(() => structuredClone(invoice));
-  const [review, setReview] = useState<DocumentReviewRecord | null>(null);
+  const [draft, setDraft] = useState<StructuredInvoice>(() => structuredClone(initialReview?.reviewedJson ?? invoice));
+  const [review, setReview] = useState<DocumentReviewRecord | null>(initialReview);
   const [busy, setBusy] = useState<'save' | 'approve' | 'export' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const approved = review?.status === 'approved';
+  useEffect(() => {
+    setDraft(structuredClone(initialReview?.reviewedJson ?? invoice));
+    setReview(initialReview);
+    setError(null);
+  }, [document.id, initialReview, invoice]);
+
+    const approved = review?.status === 'approved';
   const hasWarnings = draft.validationWarnings.length > 0;
   const canApprove = !hasWarnings && !busy;
 
