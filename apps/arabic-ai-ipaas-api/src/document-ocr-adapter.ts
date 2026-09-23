@@ -60,7 +60,7 @@ export type DocumentOcrResult = {
     textDirection: 'rtl' | 'ltr' | 'mixed';
     documentType: 'invoice' | 'purchase_order' | 'other';
     invoice: StructuredInvoice | null;
-    purchaseOrder: StructuredPurchaseOrder | null;
+    purchaseOrder?: StructuredPurchaseOrder | null;
     entities: DocumentOcrEntity[];
   };
   language: string;
