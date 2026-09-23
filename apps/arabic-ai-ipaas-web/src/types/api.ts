@@ -272,11 +272,35 @@ export type StructuredInvoice = {
   reviewRequired: boolean;
 };
 
+export type PurchaseOrderLineItem = {
+  description: string;
+  quantity: string | null;
+  unitPrice: string | null;
+  lineTotal: string | null;
+};
+
+export type StructuredPurchaseOrder = {
+  supplierName: string | null;
+  supplierTaxId: string | null;
+  purchaseOrderNumber: string | null;
+  orderDate: string | null;
+  expectedDeliveryDate: string | null;
+  currency: string | null;
+  subtotal: string | null;
+  taxTotal: string | null;
+  grandTotal: string | null;
+  confidence: Record<string, number | null>;
+  lineItems: PurchaseOrderLineItem[];
+  validationWarnings: string[];
+  reviewRequired: boolean;
+};
+
 export type DocumentStructuredJsonV2 = {
   schemaVersion: 'document-extraction-json-v2';
   textDirection: 'rtl' | 'ltr' | 'mixed';
-  documentType: 'invoice' | 'other';
+  documentType: 'invoice' | 'purchase_order' | 'other';
   invoice: StructuredInvoice | null;
+  purchaseOrder?: StructuredPurchaseOrder | null;
   entities: Array<{ label: string; value: string; confidence: number }>;
 };
 
