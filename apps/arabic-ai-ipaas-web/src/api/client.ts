@@ -3,6 +3,7 @@ import {
   type DataPolicyConfig,
   type DocumentProcessingJob,
   type DocumentRecord,
+  type DocumentDetail,
   type DocumentReviewRecord,
   type StructuredInvoice,
   type GatewayRequest,
@@ -463,6 +464,17 @@ export class ArabicAiIpaasClient {
     }
     const body = (await response.json()) as { data: DocumentRecord[] };
     return body.data;
+  }
+
+  /** Load a persisted document, its latest extraction, and latest human review. */
+  static async getDocument(documentId: string): Promise<DocumentDetail> {
+    const config = getApiConfig();
+    const response = await fetch(
+      `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}`,
+      { headers: buildHeaders(config), credentials: 'same-origin' },
+    );
+    if (!response.ok) await throwResponseError(response, `DOCUMENT_DETAIL_FAILED_${response.status}`);
+    return ((await response.json()) as { data: DocumentDetail }).data;
   }
 
   /** Save a human-reviewed invoice without mutating the source extraction. */
