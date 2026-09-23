@@ -5,6 +5,7 @@ import type { DocumentProcessingJob, DocumentRecord, DocumentStructuredJsonV2, S
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
+import { InvoiceReviewPanel } from '../components/InvoiceReviewPanel.js';
 
 function getStructuredInvoice(job: DocumentProcessingJob | null): StructuredInvoice | null {
   const structured = job?.extraction.structuredJson;
@@ -333,6 +334,10 @@ export const DocumentIntelligencePage: React.FC = () => {
                         </table>
                       </div>
                     </section>
+                  )}
+
+                  {job.extraction.status === 'ready' && invoice && (
+                    <InvoiceReviewPanel document={job.document} invoice={invoice} />
                   )}
 
                   {job.extraction.status === 'ready' && job.extraction.markdown && (
