@@ -201,4 +201,53 @@ describe('Arabic AI iPaaS integration routes', () => {
     });
     expect(response.body.data.providers).toEqual([]);
   });
+
+  it('returns the stable daily OCR quota error as HTTP 429', async () => {
+    const app = createApp({
+      masterKey: 'route-test-master-key',
+      allowInsecureTestHeaders: true,
+      documentOcrAdapter: {
+        supports: () => true,
+        extract: async () => {
+          throw new Error('OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED');
+        },
+      },
+    });
+
+    const provider = await request(app)
+      .post('/v1/provider-connections')
+      .set(ownerA)
+      .send({
+        providerType: 'gemini',
+        name: 'Gemini OCR',
+        apiKey: 'test-api-key',
+        modelDefault: 'gemini-test',
+        config: { documentOcrEnabled: true },
+      });
+    expect(provider.status).toBe(201);
+
+    const pdf = Buffer.from('%PDF-quota-contract-test', 'ascii');
+    const created = await request(app)
+      .post('/v1/documents')
+      .set(ownerA)
+      .send({ filename: 'invoice.pdf', mediaType: 'application/pdf', sizeBytes: pdf.length });
+    expect(created.status).toBe(201);
+    const documentId = created.body.data.id as string;
+
+    const uploaded = await request(app)
+      .put(`/v1/documents/${documentId}/content`)
+      .set(ownerA)
+      .set('Content-Type', 'application/pdf')
+      .send(pdf);
+    expect(uploaded.status).toBe(201);
+
+    const extraction = await request(app)
+      .post(`/v1/documents/${documentId}/extractions`)
+      .set(ownerA)
+      .send({});
+
+    expect(extraction.status).toBe(429);
+    expect(extraction.body).toEqual({ error: 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED' });
+  });
+
 });
