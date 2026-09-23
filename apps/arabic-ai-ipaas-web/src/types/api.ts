@@ -304,6 +304,36 @@ export type DocumentContentMetadata = {
   uploadedAt: string;
 };
 
+export type DocumentReviewRecord = {
+  id: string;
+  workspaceId: string;
+  documentId: string;
+  extractionId: string;
+  status: 'draft' | 'approved';
+  reviewedJson: StructuredInvoice;
+  reviewedBy: string;
+  approvalDigest?: string;
+  createdAt: string;
+};
+
+export type VerifiedInvoiceExport = {
+  schemaVersion: 'verified-invoice-json-v1';
+  document: {
+    id: string;
+    filename: string;
+    mediaType: string;
+    sha256: string | null;
+  };
+  sourceExtractionId: string;
+  approval: {
+    status: 'approved';
+    approvedBy: string;
+    approvedAt: string;
+    sha256: string;
+  };
+  invoice: StructuredInvoice;
+};
+
 export type DocumentProcessingJob = {
   document: DocumentRecord;
   upload: DocumentContentMetadata;
