@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice, StructuredPurchaseOrder } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
@@ -17,6 +17,12 @@ function getStructuredInvoice(job: DocumentProcessingJob | null): StructuredInvo
     return null;
   }
   return (structured as DocumentStructuredJsonV2).invoice;
+}
+
+function getStructuredPurchaseOrder(job: DocumentProcessingJob | null): StructuredPurchaseOrder | null {
+  const structured = job?.extraction.structuredJson;
+  if (!structured || structured.schemaVersion !== 'document-extraction-json-v2' || structured.documentType !== 'purchase_order') return null;
+  return (structured as DocumentStructuredJsonV2).purchaseOrder ?? null;
 }
 
 const invoiceWarningLabels: Record<string, { ar: string; en: string }> = {
@@ -156,6 +162,7 @@ export const DocumentIntelligencePage: React.FC = () => {
   };
 
   const invoice = getStructuredInvoice(job);
+  const purchaseOrder = getStructuredPurchaseOrder(job);
 
   const displayValue = (value: string | null | undefined) => value ?? (language === 'ar' ? 'غير موجود' : 'Not found');
   const warningLabel = (warning: string) => invoiceWarningLabels[warning]?.[language] ?? warning;
@@ -371,6 +378,31 @@ export const DocumentIntelligencePage: React.FC = () => {
 
                   {job.extraction.status === 'ready' && invoice && (
                     <InvoiceReviewPanel document={job.document} invoice={invoice} initialReview={persistedReview} />
+                  )}
+                  {job.extraction.status === 'ready' && purchaseOrder && (
+                    <section className="space-y-4 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h2 className="font-bold text-primary">{language === 'ar' ? 'بيانات أمر الشراء المنظمة' : 'Structured purchase order'}</h2>
+                        <Badge variant={purchaseOrder.reviewRequired ? 'warning' : 'success'} size="sm">
+                          {purchaseOrder.reviewRequired ? (language === 'ar' ? 'يحتاج مراجعة' : 'Review required') : (language === 'ar' ? 'تم التحقق آلياً' : 'Validated')}
+                        </Badge>
+                      </div>
+                      <dl className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                        {[
+                          [language === 'ar' ? 'المورد' : 'Supplier', purchaseOrder.supplierName],
+                          [language === 'ar' ? 'رقم أمر الشراء' : 'PO number', purchaseOrder.purchaseOrderNumber],
+                          [language === 'ar' ? 'تاريخ الطلب' : 'Order date', purchaseOrder.orderDate],
+                          [language === 'ar' ? 'التسليم المتوقع' : 'Expected delivery', purchaseOrder.expectedDeliveryDate],
+                          [language === 'ar' ? 'العملة' : 'Currency', purchaseOrder.currency],
+                          [language === 'ar' ? 'الإجمالي' : 'Grand total', purchaseOrder.grandTotal],
+                        ].map(([label, value]) => <div key={label ?? ''}><dt className="text-slate-500">{label}</dt><dd className="mt-1 font-bold text-primary">{value ?? '—'}</dd></div>)}
+                      </dl>
+                      {purchaseOrder.validationWarnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">{purchaseOrder.validationWarnings.join(' · ')}</div>}
+                      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                        <table className="w-full min-w-[620px] text-xs"><thead className="bg-slate-50"><tr><th className="p-2 text-start">{language === 'ar' ? 'الوصف' : 'Description'}</th><th className="p-2 text-start">{language === 'ar' ? 'الكمية' : 'Quantity'}</th><th className="p-2 text-start">{language === 'ar' ? 'سعر الوحدة' : 'Unit price'}</th><th className="p-2 text-start">{language === 'ar' ? 'الإجمالي' : 'Total'}</th></tr></thead>
+                        <tbody>{purchaseOrder.lineItems.map((line, index) => <tr key={index} className="border-t border-slate-100"><td className="p-2">{line.description}</td><td className="p-2">{line.quantity ?? '—'}</td><td className="p-2">{line.unitPrice ?? '—'}</td><td className="p-2">{line.lineTotal ?? '—'}</td></tr>)}</tbody></table>
+                      </div>
+                    </section>
                   )}
 
                   {job.extraction.status === 'ready' && job.extraction.markdown && (
