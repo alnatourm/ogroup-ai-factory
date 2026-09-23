@@ -334,6 +334,12 @@ export type VerifiedInvoiceExport = {
   invoice: StructuredInvoice;
 };
 
+export type DocumentDetail = {
+  document: DocumentRecord;
+  extraction: DocumentExtractionRecord | null;
+  review: DocumentReviewRecord | null;
+};
+
 export type DocumentProcessingJob = {
   document: DocumentRecord;
   upload: DocumentContentMetadata;
