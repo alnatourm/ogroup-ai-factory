@@ -10,8 +10,8 @@ describe('document decision workflow action contract', () => {
     expect(run.input).toMatchObject({decision:'accepted',route:'continue',decisionId:'d1'});
   });
   it('uses manager_review as the escalation route', () => {
-    const decision='escalated';
-    const route=decision==='accepted'?'continue':'manager_review';
+    const routeFor = (decision: 'accepted' | 'escalated') => decision === 'accepted' ? 'continue' : 'manager_review';
+    const route=routeFor('escalated');
     expect(route).toBe('manager_review');
   });
 });
