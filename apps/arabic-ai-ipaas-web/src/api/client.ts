@@ -534,6 +534,29 @@ export class ArabicAiIpaasClient {
     }
   }
 
+
+  static async comparePurchaseOrderInvoice(purchaseOrderDocumentId: string, invoiceDocumentId: string): Promise<import('../types/api.js').PurchaseOrderInvoiceMatch> {
+    const config=getApiConfig();
+    const response=await fetch(`${config.baseUrl}/v1/document-matches/po-invoice`,{method:'POST',headers:buildHeaders(config),credentials:'same-origin',body:JSON.stringify({purchaseOrderDocumentId,invoiceDocumentId})});
+    if(!response.ok) await throwResponseError(response,`DOCUMENT_MATCH_FAILED_${response.status}`);
+    return ((await response.json()) as {data:{match:import('../types/api.js').PurchaseOrderInvoiceMatch}}).data.match;
+  }
+
+  static async getPurchaseOrderInvoiceDecision(purchaseOrderDocumentId: string, invoiceDocumentId: string): Promise<import('../types/api.js').MatchDecisionRecord | null> {
+    const config=getApiConfig();
+    const qs=new URLSearchParams({purchaseOrderDocumentId,invoiceDocumentId});
+    const response=await fetch(`${config.baseUrl}/v1/document-matches/po-invoice/decision?${qs}`,{headers:buildHeaders(config),credentials:'same-origin'});
+    if(!response.ok) await throwResponseError(response,`MATCH_DECISION_LOAD_FAILED_${response.status}`);
+    return ((await response.json()) as {data:import('../types/api.js').MatchDecisionRecord|null}).data;
+  }
+
+  static async decidePurchaseOrderInvoice(purchaseOrderDocumentId: string, invoiceDocumentId: string, decision: 'accepted'|'rejected'|'escalated', reason: string): Promise<import('../types/api.js').MatchDecisionRecord> {
+    const config=getApiConfig();
+    const response=await fetch(`${config.baseUrl}/v1/document-matches/po-invoice/decision`,{method:'POST',headers:buildHeaders(config),credentials:'same-origin',body:JSON.stringify({purchaseOrderDocumentId,invoiceDocumentId,decision,reason})});
+    if(!response.ok) await throwResponseError(response,`MATCH_DECISION_SAVE_FAILED_${response.status}`);
+    return ((await response.json()) as {data:import('../types/api.js').MatchDecisionRecord}).data;
+  }
+
   /**
    * Download original bytes from the authenticated, tenant-scoped endpoint.
    */
