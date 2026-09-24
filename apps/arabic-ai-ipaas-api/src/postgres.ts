@@ -1009,20 +1009,22 @@ export class PostgresDocumentRepository implements DocumentRepository {
 
 }
 
-export class PostgresMatchDecisionRepository implements MatchDecisionRepository {
+export type MatchDecisionRow = { id:string; workspace_id:string; purchase_order_document_id:string; invoice_document_id:string; decision:MatchDecisionRecord['decision']; reason:string; decided_by:string; match_digest:string; purchase_order_extraction_id:string; invoice_extraction_id:string; created_at:Date };
+
+class PostgresMatchDecisionRepository implements MatchDecisionRepository {
   constructor(private readonly pool: Pool) {}
   async create(input: Omit<MatchDecisionRecord, 'id' | 'createdAt'>): Promise<MatchDecisionRecord> {
-    const result=await this.pool.query<any>(`insert into document_match_decisions
+    const result=await this.pool.query<MatchDecisionRow>(`insert into document_match_decisions
       (workspace_id,purchase_order_document_id,invoice_document_id,decision,reason,decided_by,match_digest,purchase_order_extraction_id,invoice_extraction_id)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *`,
       [input.workspaceId,input.purchaseOrderDocumentId,input.invoiceDocumentId,input.decision,input.reason,input.decidedBy,input.matchDigest,input.purchaseOrderExtractionId,input.invoiceExtractionId]);
     return this.map(result.rows[0]!);
   }
   async getLatest(workspaceId:string,purchaseOrderDocumentId:string,invoiceDocumentId:string): Promise<MatchDecisionRecord|undefined> {
-    const result=await this.pool.query<any>(`select * from document_match_decisions where workspace_id=$1 and purchase_order_document_id=$2 and invoice_document_id=$3 order by created_at desc,id desc limit 1`,[workspaceId,purchaseOrderDocumentId,invoiceDocumentId]);
+    const result=await this.pool.query<MatchDecisionRow>(`select * from document_match_decisions where workspace_id=$1 and purchase_order_document_id=$2 and invoice_document_id=$3 order by created_at desc,id desc limit 1`,[workspaceId,purchaseOrderDocumentId,invoiceDocumentId]);
     return result.rows[0]?this.map(result.rows[0]):undefined;
   }
-  private map(row:any):MatchDecisionRecord { return {id:row.id,workspaceId:row.workspace_id,purchaseOrderDocumentId:row.purchase_order_document_id,invoiceDocumentId:row.invoice_document_id,decision:row.decision,reason:row.reason,decidedBy:row.decided_by,matchDigest:row.match_digest,purchaseOrderExtractionId:row.purchase_order_extraction_id,invoiceExtractionId:row.invoice_extraction_id,createdAt:row.created_at.toISOString()}; }
+  private map(row:MatchDecisionRow):MatchDecisionRecord { return {id:row.id,workspaceId:row.workspace_id,purchaseOrderDocumentId:row.purchase_order_document_id,invoiceDocumentId:row.invoice_document_id,decision:row.decision,reason:row.reason,decidedBy:row.decided_by,matchDigest:row.match_digest,purchaseOrderExtractionId:row.purchase_order_extraction_id,invoiceExtractionId:row.invoice_extraction_id,createdAt:row.created_at.toISOString()}; }
 }
 
 export class PostgresTraceRepository implements TraceRepository {
