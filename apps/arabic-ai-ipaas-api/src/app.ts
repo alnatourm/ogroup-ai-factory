@@ -756,7 +756,35 @@ export function createApp(options: {
         action:'document.po_invoice_decision_recorded',entityType:'document_match_decision',entityId:decision.id,
         metadata:{purchaseOrderDocumentId,invoiceDocumentId,decision:decision.decision},
       });
-      res.status(201).json({data:decision});
+      let workflowRun = null;
+      const workflowId = typeof req.body?.workflowId === 'string' ? req.body.workflowId : '';
+      if (workflowId) {
+        const workflow = await workflowRepository.get(context.workspaceId, workflowId);
+        if (!workflow) { res.status(404).json({error:'WORKFLOW_NOT_FOUND'}); return; }
+        if (workflow.status !== 'active') { res.status(409).json({error:'WORKFLOW_NOT_ACTIVE'}); return; }
+        if (decision.decision !== 'rejected') {
+          workflowRun = await executeWorkflow(workflow, 'manual', {
+            eventType: 'document_match_decision',
+            decisionId: decision.id,
+            purchaseOrderDocumentId,
+            invoiceDocumentId,
+            decision: decision.decision,
+            route: decision.decision === 'accepted' ? 'continue' : 'manager_review',
+          }, workflowRepository);
+          await auditRepository.record({
+            workspaceId:context.workspaceId,actorUserId:context.userId,actorType:'user',
+            action:'document.po_invoice_decision_workflow_started',entityType:'workflow_run',entityId:workflowRun.id,
+            metadata:{workflowId,decisionId:decision.id,decision:decision.decision,status:workflowRun.status},
+          });
+        } else {
+          await auditRepository.record({
+            workspaceId:context.workspaceId,actorUserId:context.userId,actorType:'user',
+            action:'document.po_invoice_decision_workflow_stopped',entityType:'document_match_decision',entityId:decision.id,
+            metadata:{workflowId,decision:'rejected'},
+          });
+        }
+      }
+      res.status(201).json({data:decision,workflowRun});
     } catch(error){next(error);}
   });
 
