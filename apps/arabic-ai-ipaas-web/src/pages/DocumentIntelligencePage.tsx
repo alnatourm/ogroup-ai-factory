@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
 import { InvoiceReviewPanel } from '../components/InvoiceReviewPanel.js';
+import { PurchaseOrderInvoiceMatchPanel } from '../components/PurchaseOrderInvoiceMatchPanel.js';
 
 function getStructuredInvoice(job: DocumentProcessingJob | null): StructuredInvoice | null {
   const structured = job?.extraction.structuredJson;
@@ -532,6 +533,7 @@ export const DocumentIntelligencePage: React.FC = () => {
           )}
         </CardBody>
       </Card>
-    </div>
+      <PurchaseOrderInvoiceMatchPanel documents={history} language={language} />
+</div>
   );
 };

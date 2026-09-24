@@ -371,3 +371,16 @@ export type DocumentProcessingJob = {
   workerState: 'configured' | 'not_configured';
   uploadConfigured: boolean;
 };
+
+
+export type PurchaseOrderInvoiceMatch = {
+  schemaVersion: 'po-invoice-match-v1';
+  status: 'matched' | 'mismatch' | 'review_required';
+  score: number;
+  findings: Array<{ code: string; severity: 'info' | 'warning' | 'critical'; field?: string; poValue?: string | null; invoiceValue?: string | null }>;
+  summary: { supplierMatched: boolean | null; currencyMatched: boolean | null; totalMatched: boolean | null; lineItemsCompared: number };
+};
+export type MatchDecisionRecord = {
+  id: string; workspaceId: string; purchaseOrderDocumentId: string; invoiceDocumentId: string;
+  decision: 'accepted' | 'rejected' | 'escalated'; reason: string; decidedBy: string; createdAt: string;
+};
