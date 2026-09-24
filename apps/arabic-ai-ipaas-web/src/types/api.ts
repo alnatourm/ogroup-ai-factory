@@ -382,5 +382,5 @@ export type PurchaseOrderInvoiceMatch = {
 };
 export type MatchDecisionRecord = {
   id: string; workspaceId: string; purchaseOrderDocumentId: string; invoiceDocumentId: string;
-  decision: 'accepted' | 'rejected' | 'escalated'; reason: string; decidedBy: string; createdAt: string;
+  decision: 'accepted' | 'rejected' | 'escalated'; reason: string; decidedBy: string; matchDigest: string; purchaseOrderExtractionId: string; invoiceExtractionId: string; createdAt: string;
 };
