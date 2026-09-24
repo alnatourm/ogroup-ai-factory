@@ -1011,7 +1011,7 @@ export class PostgresDocumentRepository implements DocumentRepository {
 
 export type MatchDecisionRow = { id:string; workspace_id:string; purchase_order_document_id:string; invoice_document_id:string; decision:MatchDecisionRecord['decision']; reason:string; decided_by:string; match_digest:string; purchase_order_extraction_id:string; invoice_extraction_id:string; created_at:Date };
 
-class PostgresMatchDecisionRepository implements MatchDecisionRepository {
+export class PostgresMatchDecisionRepository implements MatchDecisionRepository {
   constructor(private readonly pool: Pool) {}
   async create(input: Omit<MatchDecisionRecord, 'id' | 'createdAt'>): Promise<MatchDecisionRecord> {
     const result=await this.pool.query<MatchDecisionRow>(`insert into document_match_decisions
