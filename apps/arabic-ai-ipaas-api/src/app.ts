@@ -492,7 +492,15 @@ export function createApp(options: {
 
   app.get('/v1/documents', async (req, res, next) => {
     try {
-      res.json({ data: await documentRepository.list(getContext(req).workspaceId) });
+      const context=getContext(req);
+      const documents=await documentRepository.list(context.workspaceId);
+      const data=await Promise.all(documents.map(async(document)=>{
+        const extraction=await documentRepository.getExtraction(context.workspaceId,document.id);
+        const structured=extraction?.structuredJson;
+        const documentType=structured?.schemaVersion==='document-extraction-json-v2' ? structured.documentType : null;
+        return {...document,documentType};
+      }));
+      res.json({ data });
     } catch (error) {
       next(error);
     }

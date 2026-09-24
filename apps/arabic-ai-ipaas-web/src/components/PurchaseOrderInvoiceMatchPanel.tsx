@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader } from './common/Card.js';
 import { Badge } from './common/Badge.js';
 
 export const PurchaseOrderInvoiceMatchPanel: React.FC<{documents:DocumentRecord[]; language:'ar'|'en'}>=({documents,language})=>{
+ const purchaseOrders=documents.filter(d=>d.documentType==='purchase_order'); const invoices=documents.filter(d=>d.documentType==='invoice');
  const [po,setPo]=useState(''); const [invoice,setInvoice]=useState(''); const [match,setMatch]=useState<PurchaseOrderInvoiceMatch|null>(null);
  const [latest,setLatest]=useState<MatchDecisionRecord|null>(null); const [reason,setReason]=useState(''); const [busy,setBusy]=useState(false); const [error,setError]=useState<string|null>(null);
  useEffect(()=>{setMatch(null);setLatest(null);},[po,invoice]);
@@ -12,8 +13,9 @@ export const PurchaseOrderInvoiceMatchPanel: React.FC<{documents:DocumentRecord[
  const decide=async(decision:'accepted'|'rejected'|'escalated')=>{if(reason.trim().length<3)return;setBusy(true);setError(null);try{setLatest(await ArabicAiIpaasClient.decidePurchaseOrderInvoice(po,invoice,decision,reason));setReason('');}catch(e){setError(e instanceof Error?e.message:'MATCH_DECISION_SAVE_FAILED');}finally{setBusy(false);}};
  return <Card><CardHeader title={language==='ar'?'مطابقة أمر الشراء والفاتورة':'PO ↔ Invoice Matching'} subtitle={language==='ar'?'مقارنة حتمية ثم قرار بشري موثق':'Deterministic comparison followed by a governed human decision'}/><CardBody className="space-y-4 font-arabic">
   <div className="grid gap-3 md:grid-cols-2">
-   <label className="text-xs">{language==='ar'?'أمر الشراء':'Purchase order'}<select className="mt-1 w-full rounded-lg border p-2" value={po} onChange={e=>setPo(e.target.value)}><option value="">{language==='ar'?'اختر مستنداً':'Select document'}</option>{documents.map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select></label>
-   <label className="text-xs">{language==='ar'?'الفاتورة':'Invoice'}<select className="mt-1 w-full rounded-lg border p-2" value={invoice} onChange={e=>setInvoice(e.target.value)}><option value="">{language==='ar'?'اختر مستنداً':'Select document'}</option>{documents.map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select></label>
+   <label className="text-xs">{language==='ar'?'أمر الشراء':'Purchase order'}<select className="mt-1 w-full rounded-lg border p-2" value={po} onChange={e=>setPo(e.target.value)}><option value="">{language==='ar'?'اختر مستنداً':'Select document'}</option>{purchaseOrders.map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select></label>
+   <label className="text-xs">{language==='ar'?'الفاتورة':'Invoice'}<select className="mt-1 w-full rounded-lg border p-2" value={invoice} onChange={e=>setInvoice(e.target.value)}><option value="">{language==='ar'?'اختر مستنداً':'Select document'}</option>{invoices.map(d=><option key={d.id} value={d.id}>{d.filename}</option>)}</select></label>
+  {(purchaseOrders.length===0||invoices.length===0)&&<div className="md:col-span-2 text-xs text-slate-500">{language==='ar'?'ارفع واستخرج أمر شراء وفاتورة جاهزين للمطابقة.':'Upload and extract both a purchase order and an invoice before matching.'}</div>}
   </div>
   <button disabled={!po||!invoice||po===invoice||busy} onClick={compare} className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{busy?(language==='ar'?'جارٍ التنفيذ...':'Working...'):(language==='ar'?'قارن المستندين':'Compare documents')}</button>
   {error&&<div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">{error}</div>}
