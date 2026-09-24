@@ -240,6 +240,7 @@ export type DocumentRecord = {
   sizeBytes: number;
   sha256?: string;
   status: 'uploaded' | 'processing' | 'ready' | 'failed' | 'deleted';
+  documentType?: 'invoice' | 'purchase_order' | 'other' | null;
   createdBy?: string;
   createdAt: string;
 };
