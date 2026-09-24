@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 export type MatchDecision = 'accepted' | 'rejected' | 'escalated';
 export type MatchDecisionRecord = {
   id: string; workspaceId: string; purchaseOrderDocumentId: string; invoiceDocumentId: string;
-  decision: MatchDecision; reason: string; decidedBy: string; createdAt: string;
+  decision: MatchDecision; reason: string; decidedBy: string; matchDigest: string; purchaseOrderExtractionId: string; invoiceExtractionId: string; createdAt: string;
 };
 export interface MatchDecisionRepository {
   create(input: Omit<MatchDecisionRecord, 'id' | 'createdAt'>): Promise<MatchDecisionRecord>;
@@ -25,3 +25,5 @@ export function parseMatchDecision(body: unknown): {decision: MatchDecision; rea
   if (typeof reason!=='string'||reason.trim().length<3||reason.trim().length>1000) throw new Error('INVALID_MATCH_DECISION_REASON');
   return {decision,reason:reason.trim()};
 }
+
+export function createMatchDigest(input: unknown): string { return crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex'); }
