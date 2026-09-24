@@ -35,4 +35,19 @@ describe('PO invoice matching', () => {
     expect(result.status).toBe('mismatch');
     expect(result.findings.map((f) => f.code)).toEqual(expect.arrayContaining(['LINE_QUANTITY_MISMATCH','LINE_UNIT_PRICE_MISMATCH']));
   });
+  it('matches reordered line items by normalized description and includes line checks in score', () => {
+    const secondPo={description:'Support',quantity:'2',unitPrice:'10.00',lineTotal:'20.00'};
+    const secondInvoice={description:'support',quantity:'2',unitPrice:'10.00',taxAmount:null,lineTotal:'20.00'};
+    const result=comparePurchaseOrderToInvoice({...po,lineItems:[po.lineItems[0]!,secondPo]},{...invoice,lineItems:[secondInvoice,invoice.lineItems[0]!]});
+    expect(result.status).toBe('matched'); expect(result.score).toBe(100); expect(result.summary.lineItemsCompared).toBe(2);
+  });
+  it('reduces score when a matched line has a financial mismatch', () => {
+    const result=comparePurchaseOrderToInvoice(po,{...invoice,lineItems:[{...invoice.lineItems[0]!,quantity:'2'}]});
+    expect(result.status).toBe('mismatch'); expect(result.score).toBeLessThan(100);
+  });
+  it('flags missing and unexpected lines instead of comparing unrelated positions', () => {
+    const result=comparePurchaseOrderToInvoice(po,{...invoice,lineItems:[{...invoice.lineItems[0]!,description:'Different service'}]});
+    expect(result.status).toBe('mismatch');
+    expect(result.findings.map(f=>f.code)).toEqual(expect.arrayContaining(['LINE_ITEM_NOT_FOUND','UNEXPECTED_INVOICE_LINE_ITEM']));
+  });
 });
