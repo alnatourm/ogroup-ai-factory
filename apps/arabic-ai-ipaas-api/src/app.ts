@@ -31,7 +31,7 @@ import {
 } from './document-ocr-adapter.js';
 import { runDocumentOcr } from './document-ocr-service.js';
 import { comparePurchaseOrderToInvoice } from './document-match.js';
-import { MemoryMatchDecisionRepository, parseMatchDecision, type MatchDecisionRepository } from './document-match-decision.js';
+import { createMatchDigest, MemoryMatchDecisionRepository, parseMatchDecision, type MatchDecisionRepository } from './document-match-decision.js';
 import { parseStructuredInvoice } from './structured-invoice.js';
 import { parseStructuredPurchaseOrder } from './structured-purchase-order.js';
 import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
@@ -746,22 +746,30 @@ export function createApp(options: {
         documentRepository.get(context.workspaceId,invoiceDocumentId),
       ]);
       if(!poDocument||!invoiceDocument){res.status(404).json({error:'DOCUMENT_NOT_FOUND'});return;}
+      const [poExtraction,invoiceExtraction]=await Promise.all([
+        documentRepository.getExtraction(context.workspaceId,purchaseOrderDocumentId),
+        documentRepository.getExtraction(context.workspaceId,invoiceDocumentId),
+      ]);
+      if(!poExtraction||!invoiceExtraction||poExtraction.status!=='ready'||invoiceExtraction.status!=='ready'){res.status(409).json({error:'DOCUMENT_EXTRACTION_NOT_READY'});return;}
+      const poStructured=poExtraction.structuredJson, invoiceStructured=invoiceExtraction.structuredJson;
+      if(poStructured?.schemaVersion!=='document-extraction-json-v2'||poStructured.documentType!=='purchase_order'||invoiceStructured?.schemaVersion!=='document-extraction-json-v2'||invoiceStructured.documentType!=='invoice'){res.status(409).json({error:'DOCUMENT_TYPES_NOT_MATCHABLE'});return;}
+      const match=comparePurchaseOrderToInvoice(parseStructuredPurchaseOrder(poStructured.purchaseOrder),parseStructuredInvoice(invoiceStructured.invoice));
+      const workflowId=typeof req.body?.workflowId==='string'?req.body.workflowId:'';
+      let workflow = null;
+      if(workflowId){workflow=await workflowRepository.get(context.workspaceId,workflowId);if(!workflow){res.status(404).json({error:'WORKFLOW_NOT_FOUND'});return;}if(workflow.status!=='active'){res.status(409).json({error:'WORKFLOW_NOT_ACTIVE'});return;}}
       const parsed=parseMatchDecision(req.body);
       const decision=await matchDecisionRepository.create({
         workspaceId:context.workspaceId,purchaseOrderDocumentId,invoiceDocumentId,
         decision:parsed.decision,reason:parsed.reason,decidedBy:context.userId,
+        matchDigest:createMatchDigest(match),purchaseOrderExtractionId:poExtraction.id,invoiceExtractionId:invoiceExtraction.id,
       });
       await auditRepository.record({
         workspaceId:context.workspaceId,actorUserId:context.userId,actorType:'user',
         action:'document.po_invoice_decision_recorded',entityType:'document_match_decision',entityId:decision.id,
-        metadata:{purchaseOrderDocumentId,invoiceDocumentId,decision:decision.decision},
+        metadata:{purchaseOrderDocumentId,invoiceDocumentId,decision:decision.decision,matchDigest:decision.matchDigest,purchaseOrderExtractionId:decision.purchaseOrderExtractionId,invoiceExtractionId:decision.invoiceExtractionId},
       });
       let workflowRun = null;
-      const workflowId = typeof req.body?.workflowId === 'string' ? req.body.workflowId : '';
-      if (workflowId) {
-        const workflow = await workflowRepository.get(context.workspaceId, workflowId);
-        if (!workflow) { res.status(404).json({error:'WORKFLOW_NOT_FOUND'}); return; }
-        if (workflow.status !== 'active') { res.status(409).json({error:'WORKFLOW_NOT_ACTIVE'}); return; }
+      if (workflowId && workflow) {
         if (decision.decision !== 'rejected') {
           workflowRun = await executeWorkflow(workflow, 'manual', {
             eventType: 'document_match_decision',
