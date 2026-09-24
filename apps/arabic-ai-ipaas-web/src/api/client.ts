@@ -550,11 +550,18 @@ export class ArabicAiIpaasClient {
     return ((await response.json()) as {data:import('../types/api.js').MatchDecisionRecord|null}).data;
   }
 
-  static async decidePurchaseOrderInvoice(purchaseOrderDocumentId: string, invoiceDocumentId: string, decision: 'accepted'|'rejected'|'escalated', reason: string): Promise<import('../types/api.js').MatchDecisionRecord> {
+  static async listWorkflows(): Promise<import('../types/api.js').WorkflowRecord[]> {
+    const config=getApiConfig(); const response=await fetch(`${config.baseUrl}/v1/workflows`,{headers:buildHeaders(config),credentials:'same-origin'});
+    if(!response.ok) await throwResponseError(response,`WORKFLOWS_LOAD_FAILED_${response.status}`);
+    return ((await response.json()) as {data:import('../types/api.js').WorkflowRecord[]}).data;
+  }
+
+  static async decidePurchaseOrderInvoice(purchaseOrderDocumentId: string, invoiceDocumentId: string, decision: 'accepted'|'rejected'|'escalated', reason: string, workflowId?: string): Promise<{decision:import('../types/api.js').MatchDecisionRecord; workflowRun:import('../types/api.js').WorkflowRun|null}> {
     const config=getApiConfig();
-    const response=await fetch(`${config.baseUrl}/v1/document-matches/po-invoice/decision`,{method:'POST',headers:buildHeaders(config),credentials:'same-origin',body:JSON.stringify({purchaseOrderDocumentId,invoiceDocumentId,decision,reason})});
+    const response=await fetch(`${config.baseUrl}/v1/document-matches/po-invoice/decision`,{method:'POST',headers:buildHeaders(config),credentials:'same-origin',body:JSON.stringify({purchaseOrderDocumentId,invoiceDocumentId,decision,reason,...(workflowId?{workflowId}:{})})});
     if(!response.ok) await throwResponseError(response,`MATCH_DECISION_SAVE_FAILED_${response.status}`);
-    return ((await response.json()) as {data:import('../types/api.js').MatchDecisionRecord}).data;
+    const body=(await response.json()) as {data:import('../types/api.js').MatchDecisionRecord; workflowRun:import('../types/api.js').WorkflowRun|null};
+    return {decision:body.data,workflowRun:body.workflowRun};
   }
 
   /**

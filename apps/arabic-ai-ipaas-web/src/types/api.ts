@@ -159,6 +159,11 @@ export type WorkflowRun = {
   stepRuns: WorkflowStepRun[];
 };
 
+
+export type WorkflowRecord = {
+  id: string; workspaceId: string; name: string; description?: string; status: 'draft'|'active'|'paused'|'archived'; version: number; createdAt: string; updatedAt: string;
+};
+
 /* Document Intelligence Types */
 export type ExtractedEntity = {
   field: string;
