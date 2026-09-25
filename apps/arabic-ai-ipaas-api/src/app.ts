@@ -944,6 +944,7 @@ export function createApp(options: {
           provider,
           secret: decryptSecret(provider.secretCiphertext, masterKey),
           adapter: documentOcrAdapter,
+          piiMaskingEnabled: (await dataPolicyRepository.get(context.workspaceId)).piiMaskingEnabled,
         });
         await auditRepository.record({
           workspaceId: context.workspaceId,
