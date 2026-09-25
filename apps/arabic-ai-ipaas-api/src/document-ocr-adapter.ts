@@ -246,6 +246,9 @@ export class OpenAICompatibleDocumentOcrAdapter implements DocumentOcrAdapter {
       'Use null for unsupported values. entities is an array of label, value, confidence.',
     ].join(' ');
 
+    if (input.mediaType !== 'image/png' && input.mediaType !== 'image/jpeg') {
+      throw new Error('OCR_PROVIDER_MEDIA_TYPE_UNSUPPORTED');
+    }
     const response = await this.fetchImpl(url, {
       method: 'POST',
       headers: { authorization: `Bearer ${input.secret}`, 'content-type': 'application/json' },
@@ -257,10 +260,9 @@ export class OpenAICompatibleDocumentOcrAdapter implements DocumentOcrAdapter {
           content: [
             { type: 'text', text: schemaPrompt },
             {
-              type: 'file',
-              file: {
-                filename: input.filename,
-                file_data: `data:${input.mediaType};base64,${input.content.toString('base64')}`,
+              type: 'image_url',
+              image_url: {
+                url: `data:${input.mediaType};base64,${input.content.toString('base64')}`,
               },
             },
           ],
