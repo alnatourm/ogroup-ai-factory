@@ -38,6 +38,7 @@ export type ChatMessage = {
 };
 
 export type GatewayRequest = {
+  providerConnectionId?: string;
   model?: string;
   messages: ChatMessage[];
   temperature?: number;
