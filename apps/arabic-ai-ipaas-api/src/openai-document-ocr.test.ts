@@ -31,6 +31,23 @@ describe('OpenAICompatibleDocumentOcrAdapter', () => {
     expect(result.markdown).toBe('PO 123');
   });
 
+  it('accepts a fenced Qwen JSON response and normalizes safe top-level defaults', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: `\`\`\`json
+{"markdown":"فاتورة 123","documentType":"other","invoice":null,"purchaseOrder":null}
+\`\`\`` } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const adapter = new OpenAICompatibleDocumentOcrAdapter(fetchImpl as typeof fetch);
+    const result = await adapter.extract({
+      content: Buffer.from('image'), mediaType: 'image/jpeg', filename: 'invoice.jpg',
+      provider, secret: 'secret',
+    });
+    expect(result.markdown).toBe('فاتورة 123');
+    expect(result.language).toBe('und');
+    expect(result.pageCount).toBe(1);
+    expect(result.structuredJson.textDirection).toBe('mixed');
+  });
+
   it('refuses PDF rather than sending an unsupported file shape to a vision endpoint', async () => {
     const adapter = new OpenAICompatibleDocumentOcrAdapter(vi.fn() as unknown as typeof fetch);
     await expect(adapter.extract({
