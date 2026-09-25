@@ -211,6 +211,23 @@ export class ArabicAiIpaasClient {
     return newProvider;
   }
 
+  static async updateProviderDocumentProcessing(
+    providerId: string,
+    documentOcrEnabled: boolean,
+  ): Promise<SafeProviderConnection> {
+    const config = getApiConfig();
+    const response = await fetch(`${config.baseUrl}/v1/provider-connections/${encodeURIComponent(providerId)}`, {
+      method: 'PATCH',
+      headers: buildHeaders(config),
+      body: JSON.stringify({ documentOcrEnabled }),
+    });
+    if (!response.ok) {
+      await throwResponseError(response, `PROVIDER_UPDATE_FAILED_${response.status}`);
+    }
+    const body = (await response.json()) as { data: SafeProviderConnection };
+    return body.data;
+  }
+
   /**
    * Delete provider connection
    * Live backend endpoint: DELETE /v1/provider-connections/:id
