@@ -620,11 +620,11 @@ export class ArabicAiIpaasClient {
    * Retry extraction for an already stored, tenant-scoped document.
    * Reuses the verified original bytes and never creates a duplicate document.
    */
-  static async retryDocumentExtraction(documentId: string): Promise<void> {
+  static async retryDocumentExtraction(documentId: string, providerConnectionId?: string): Promise<void> {
     const config = getApiConfig();
     const response = await fetch(
       `${config.baseUrl}/v1/documents/${encodeURIComponent(documentId)}/extractions`,
-      { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
+      { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin', body: JSON.stringify(providerConnectionId ? { providerConnectionId } : {}) },
     );
     if (!response.ok) {
       await throwResponseError(response, `DOCUMENT_EXTRACTION_RETRY_FAILED_${response.status}`);
@@ -635,7 +635,7 @@ export class ArabicAiIpaasClient {
    * Register metadata, upload validated bytes, then request extraction.
    * OCR remains explicitly not configured until a real worker adapter is connected.
    */
-  static async processDocument(file: File): Promise<DocumentProcessingJob> {
+  static async processDocument(file: File, providerConnectionId?: string): Promise<DocumentProcessingJob> {
     const config = getApiConfig();
     if (!file.type) throw new Error('UNSUPPORTED_MEDIA_TYPE');
 
@@ -675,7 +675,12 @@ export class ArabicAiIpaasClient {
 
     const extractionResponse = await fetch(
       `${config.baseUrl}/v1/documents/${encodeURIComponent(registration.data.id)}/extractions`,
-      { method: 'POST', headers: buildHeaders(config), credentials: 'same-origin' },
+      {
+        method: 'POST',
+        headers: buildHeaders(config),
+        credentials: 'same-origin',
+        body: JSON.stringify(providerConnectionId ? { providerConnectionId } : {}),
+      },
     );
     if (!extractionResponse.ok) {
       await throwResponseError(
