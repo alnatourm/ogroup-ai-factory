@@ -10,10 +10,8 @@ export function providerSupportsCapability(
   if (capability === 'chat') {
     return provider.providerType === 'openai-compatible' || provider.providerType === 'gemini';
   }
-  // Document Intelligence is intentionally Gemini-only for now.
-  // OpenAI-compatible providers remain available for chat/gateway workloads,
-  // but are not eligible for governed document extraction.
-  return provider.providerType === 'gemini' && provider.config.documentOcrEnabled === true;
+  if (provider.config.documentOcrEnabled === true) return true;
+  return provider.providerType === 'gemini';
 }
 
 export function providersForCapability(
