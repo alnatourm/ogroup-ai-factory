@@ -1060,7 +1060,14 @@ export function createApp(options: {
           })),
         },
       });
-      next(lastError ?? new Error('OCR_PROCESSING_FAILED'));
+      const code = stableProviderErrorCode(lastError);
+      const statusMatch = /^(?:OCR_)?PROVIDER_HTTP_(\d{3})$/.exec(code);
+      const status = code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED' || statusMatch?.[1] === '429'
+        ? 429
+        : code === 'OCR_PROVIDER_UNSUPPORTED_MEDIA_TYPE'
+          ? 415
+          : 502;
+      res.status(status).json({ error: code });
     } catch (error) {
       next(error);
     }

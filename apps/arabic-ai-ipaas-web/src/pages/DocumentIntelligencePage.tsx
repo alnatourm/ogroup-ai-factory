@@ -57,6 +57,11 @@ export const DocumentIntelligencePage: React.FC = () => {
         ? 'وصل اتصال Gemini إلى الحد اليومي للخطة المجانية. لن تنجح إعادة المحاولة اليوم بهذا النموذج؛ انتظر تجدد الحصة أو استخدم اتصالاً بحصة متاحة.'
         : 'The Gemini connection reached its Free Tier daily quota. Retrying this model today will not succeed; wait for quota renewal or use a connection with available quota.';
     }
+    if (code === 'OCR_PROVIDER_UNSUPPORTED_MEDIA_TYPE') {
+      return language === 'ar'
+        ? 'مزود الذكاء الاصطناعي المحدد لا يدعم هذا النوع من الملفات. استخدم PNG أو JPEG مع هذا المزود، أو اختر Google Gemini لمعالجة PDF.'
+        : 'The selected AI provider does not support this file type. Use PNG/JPEG with this provider, or choose Google Gemini for PDF processing.';
+    }
     if (code === 'OCR_PROVIDER_HTTP_429') {
       return language === 'ar'
         ? 'وصل اتصال Gemini إلى حد الطلبات المؤقت. انتظر قليلاً ثم استخدم إعادة الاستخراج؛ لا تحتاج إلى رفع الملف مرة أخرى.'
