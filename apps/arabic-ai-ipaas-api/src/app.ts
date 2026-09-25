@@ -1039,70 +1039,95 @@ export function createApp(options: {
     try {
       const workspaceId = getContext(req).workspaceId;
       const input = req.body as GatewayRequest;
-      const providers = (await providerRepository.list(workspaceId)).filter((item) => item.status === 'active');
-      const provider = input.providerConnectionId
-        ? providers.find((item) => item.id === input.providerConnectionId)
-        : providers.find((item) => item.providerType === 'openai-compatible' || item.providerType === 'gemini');
-      if (!provider) {
-        res.status(409).json({
-          error: input.providerConnectionId ? 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' : 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION',
-        });
-        return;
-      }
-      const selectedAdapter = provider.providerType === 'openai-compatible'
-        ? adapter
-        : provider.providerType === 'gemini'
-          ? geminiAdapter
-          : undefined;
-      if (!selectedAdapter) {
-        res.status(501).json({ error: 'PROVIDER_ADAPTER_NOT_IMPLEMENTED', providerType: provider.providerType });
-        return;
-      }
-
       if (!Array.isArray(input.messages) || input.messages.length === 0) {
         res.status(400).json({ error: 'MESSAGES_REQUIRED' });
         return;
       }
 
-      const secret = decryptSecret(provider.secretCiphertext, masterKey);
-      try {
-        const completion = await selectedAdapter.complete(input, provider, secret);
-        await traceRepository.record({
-          workspaceId,
-          providerConnectionId: provider.id,
-          model: completion.model,
-          inputTokens: completion.promptTokens,
-          outputTokens: completion.completionTokens,
-          latencyMs: Date.now() - startedAt,
-          status: 'succeeded',
-          safeMetadata: { model: completion.model },
-        });
-        res.json({
-          id: `chatcmpl_${crypto.randomUUID()}`,
-          object: 'chat.completion',
-          created: Math.floor(Date.now() / 1000),
-          model: completion.model,
-          choices: [{ index: 0, message: { role: 'assistant', content: completion.content }, finish_reason: 'stop' }],
-          usage: {
-            prompt_tokens: completion.promptTokens,
-            completion_tokens: completion.completionTokens,
-            total_tokens: completion.promptTokens + completion.completionTokens,
-          },
-        });
-      } catch {
-        await traceRepository.record({
-          workspaceId,
-          providerConnectionId: provider.id,
-          model: input.model ?? provider.modelDefault ?? 'unknown',
-          inputTokens: 0,
-          outputTokens: 0,
-          latencyMs: Date.now() - startedAt,
-          status: 'failed',
-          errorCode: 'PROVIDER_REQUEST_FAILED',
-          safeMetadata: { model: input.model ?? provider.modelDefault ?? 'unknown' },
-        });
-        res.status(502).json({ error: 'PROVIDER_REQUEST_FAILED' });
+      const providers = providersForCapability(
+        await providerRepository.list(workspaceId),
+        'chat',
+        input.providerConnectionId,
+      );
+      if (input.providerConnectionId && !providers.some((provider) => provider.id === input.providerConnectionId)) {
+        res.status(409).json({ error: 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' });
+        return;
       }
+      if (providers.length === 0) {
+        res.status(409).json({ error: 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION' });
+        return;
+      }
+
+      let lastError: unknown;
+      const attemptedProviderIds: string[] = [];
+      for (const provider of providers) {
+        const selectedAdapter = provider.providerType === 'openai-compatible'
+          ? adapter
+          : provider.providerType === 'gemini'
+            ? geminiAdapter
+            : undefined;
+        if (!selectedAdapter) continue;
+
+        const providerInput: GatewayRequest = {
+          ...input,
+          model: provider.id === input.providerConnectionId ? input.model : provider.modelDefault,
+        };
+        try {
+          const completion = await selectedAdapter.complete(
+            providerInput,
+            provider,
+            decryptSecret(provider.secretCiphertext, masterKey),
+          );
+          attemptedProviderIds.push(provider.id);
+          await traceRepository.record({
+            workspaceId,
+            providerConnectionId: provider.id,
+            model: completion.model,
+            inputTokens: completion.promptTokens,
+            outputTokens: completion.completionTokens,
+            latencyMs: Date.now() - startedAt,
+            status: 'succeeded',
+            safeMetadata: {
+              model: completion.model,
+              failoverUsed: attemptedProviderIds.length > 1,
+              attemptedProviderIds,
+            },
+          });
+          res.json({
+            id: `chatcmpl_${crypto.randomUUID()}`,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: completion.model,
+            choices: [{ index: 0, message: { role: 'assistant', content: completion.content }, finish_reason: 'stop' }],
+            usage: {
+              prompt_tokens: completion.promptTokens,
+              completion_tokens: completion.completionTokens,
+              total_tokens: completion.promptTokens + completion.completionTokens,
+            },
+          });
+          return;
+        } catch (error) {
+          attemptedProviderIds.push(provider.id);
+          const errorCode = stableProviderErrorCode(error);
+          await traceRepository.record({
+            workspaceId,
+            providerConnectionId: provider.id,
+            model: providerInput.model ?? provider.modelDefault ?? 'unknown',
+            inputTokens: 0,
+            outputTokens: 0,
+            latencyMs: Date.now() - startedAt,
+            status: 'failed',
+            errorCode,
+            safeMetadata: { model: providerInput.model ?? provider.modelDefault ?? 'unknown' },
+          });
+          lastError = error;
+          if (!isRetryableProviderError(error)) break;
+        }
+      }
+
+      const code = stableProviderErrorCode(lastError);
+      const statusMatch = /^(?:OCR_)?PROVIDER_HTTP_(\\d{3})$/.exec(code);
+      res.status(statusMatch?.[1] === '429' ? 429 : 502).json({ error: code });
     } catch (error) {
       next(error);
     }
