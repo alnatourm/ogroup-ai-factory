@@ -144,7 +144,7 @@ function requireModel(provider: ProviderConnection): string {
 function parseProviderJsonText(text: string): unknown {
   const trimmed = text.trim();
   const candidates = [trimmed];
-  const fenced = trimmed.match(/^\`\`\`(?:json)?\s*([\s\S]*?)\s*\`\`\`$/i);
+  const fenced = trimmed.match(/^`{3}(?:json)?\s*([\s\S]*?)\s*`{3}$/i);
   if (fenced?.[1]) candidates.push(fenced[1].trim());
   const firstBrace = trimmed.indexOf('{');
   const lastBrace = trimmed.lastIndexOf('}');
