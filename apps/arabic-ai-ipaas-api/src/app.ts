@@ -27,9 +27,11 @@ import {
 import { MemoryProviderRepository } from './memory-repository.js';
 import {
   GeminiDocumentOcrAdapter,
+  OpenAICompatibleDocumentOcrAdapter,
   type DocumentOcrAdapter,
 } from './document-ocr-adapter.js';
 import { runDocumentOcr } from './document-ocr-service.js';
+import { isRetryableProviderError, providersForCapability, stableProviderErrorCode } from './provider-router.js';
 import { comparePurchaseOrderToInvoice } from './document-match.js';
 import { createMatchDigest, MemoryMatchDecisionRepository, parseMatchDecision, type MatchDecisionRepository } from './document-match-decision.js';
 import { parseStructuredInvoice } from './structured-invoice.js';
@@ -213,6 +215,7 @@ export function createApp(options: {
   documentRepository?: DocumentRepository;
   documentContentStore?: DocumentContentStore;
   documentOcrAdapter?: DocumentOcrAdapter;
+  openAiDocumentOcrAdapter?: DocumentOcrAdapter;
   traceRepository?: TraceRepository;
   matchDecisionRepository?: MatchDecisionRepository;
   adapter?: ProviderAdapter;
@@ -230,6 +233,7 @@ export function createApp(options: {
   const documentRepository = options.documentRepository ?? new MemoryDocumentRepository();
   const documentContentStore = options.documentContentStore ?? new MemoryDocumentContentStore();
   const documentOcrAdapter = options.documentOcrAdapter ?? new GeminiDocumentOcrAdapter();
+  const openAiDocumentOcrAdapter = options.openAiDocumentOcrAdapter ?? new OpenAICompatibleDocumentOcrAdapter();
   const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
   const matchDecisionRepository = options.matchDecisionRepository ?? new MemoryMatchDecisionRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
@@ -915,15 +919,25 @@ export function createApp(options: {
         res.status(409).json({ error: 'DOCUMENT_CONTENT_REQUIRED' });
         return;
       }
-      const providers = (await providerRepository.list(context.workspaceId))
-        .filter((provider) => provider.status === 'active');
-      const provider = providers.find((candidate) => documentOcrAdapter.supports(candidate));
-      if (!provider) {
-        const queued = await queueDocumentExtraction(
-          context.workspaceId,
-          documentId,
-          documentRepository,
+      const providers = providersForCapability(
+        await providerRepository.list(context.workspaceId),
+        'document-extraction',
+      );
+      const candidates = providers
+        .map((provider) => ({
+          provider,
+          adapter: documentOcrAdapter.supports(provider)
+            ? documentOcrAdapter
+            : openAiDocumentOcrAdapter.supports(provider)
+              ? openAiDocumentOcrAdapter
+              : undefined,
+        }))
+        .filter((candidate): candidate is { provider: typeof providers[number]; adapter: DocumentOcrAdapter } =>
+          candidate.adapter !== undefined,
         );
+
+      if (candidates.length === 0) {
+        const queued = await queueDocumentExtraction(context.workspaceId, documentId, documentRepository);
         await auditRepository.record({
           workspaceId: context.workspaceId,
           actorUserId: context.userId,
@@ -937,52 +951,67 @@ export function createApp(options: {
         return;
       }
 
-      try {
-        const completed = await runDocumentOcr({
-          workspaceId: context.workspaceId,
-          documentId,
-          documentRepository,
-          contentStore: documentContentStore,
-          provider,
-          secret: decryptSecret(provider.secretCiphertext, masterKey),
-          adapter: documentOcrAdapter,
-          piiMaskingEnabled: (await dataPolicyRepository.get(context.workspaceId)).piiMaskingEnabled,
-        });
-        await auditRepository.record({
-          workspaceId: context.workspaceId,
-          actorUserId: context.userId,
-          actorType: 'user',
-          action: 'document.extraction_completed',
-          entityType: 'document',
-          entityId: documentId,
-          metadata: {
-            workerConfigured: true,
-            providerConnectionId: provider.id,
-            engineVersion: completed.extraction.engineVersion,
-            language: completed.extraction.language,
-            pageCount: completed.extraction.pageCount,
-          },
-        });
-        res.status(200).json({ data: completed, workerState: 'configured' });
-      } catch (error) {
-        const errorCode = error instanceof Error
-          ? (error.message.split(':')[0] ?? 'OCR_PROCESSING_FAILED')
-          : 'OCR_PROCESSING_FAILED';
-        await auditRepository.record({
-          workspaceId: context.workspaceId,
-          actorUserId: context.userId,
-          actorType: 'user',
-          action: 'document.extraction_failed',
-          entityType: 'document',
-          entityId: documentId,
-          metadata: {
-            workerConfigured: true,
-            providerConnectionId: provider.id,
-            errorCode,
-          },
-        });
-        next(error);
+      const attempts: Array<{ providerConnectionId: string; errorCode?: string }> = [];
+      let lastError: unknown;
+      for (const candidate of candidates) {
+        try {
+          const completed = await runDocumentOcr({
+            workspaceId: context.workspaceId,
+            documentId,
+            documentRepository,
+            contentStore: documentContentStore,
+            provider: candidate.provider,
+            secret: decryptSecret(candidate.provider.secretCiphertext, masterKey),
+            adapter: candidate.adapter,
+            piiMaskingEnabled: (await dataPolicyRepository.get(context.workspaceId)).piiMaskingEnabled,
+          });
+          attempts.push({ providerConnectionId: candidate.provider.id });
+          await auditRepository.record({
+            workspaceId: context.workspaceId,
+            actorUserId: context.userId,
+            actorType: 'user',
+            action: 'document.extraction_completed',
+            entityType: 'document',
+            entityId: documentId,
+            metadata: {
+              workerConfigured: true,
+              providerConnectionId: candidate.provider.id,
+              failoverUsed: attempts.length > 1,
+              attempts: attempts.map((attempt) => ({
+                providerConnectionId: attempt.providerConnectionId,
+                errorCode: attempt.errorCode,
+              })),
+              engineVersion: completed.extraction.engineVersion,
+              language: completed.extraction.language,
+              pageCount: completed.extraction.pageCount,
+            },
+          });
+          res.status(200).json({ data: completed, workerState: 'configured', routing: { failoverUsed: attempts.length > 1 } });
+          return;
+        } catch (error) {
+          const errorCode = stableProviderErrorCode(error);
+          attempts.push({ providerConnectionId: candidate.provider.id, errorCode });
+          lastError = error;
+          if (!isRetryableProviderError(error)) break;
+        }
       }
+
+      await auditRepository.record({
+        workspaceId: context.workspaceId,
+        actorUserId: context.userId,
+        actorType: 'user',
+        action: 'document.extraction_failed',
+        entityType: 'document',
+        entityId: documentId,
+        metadata: {
+          workerConfigured: true,
+          attempts: attempts.map((attempt) => ({
+            providerConnectionId: attempt.providerConnectionId,
+            errorCode: attempt.errorCode,
+          })),
+        },
+      });
+      next(lastError ?? new Error('OCR_PROCESSING_FAILED'));
     } catch (error) {
       next(error);
     }
@@ -1010,70 +1039,95 @@ export function createApp(options: {
     try {
       const workspaceId = getContext(req).workspaceId;
       const input = req.body as GatewayRequest;
-      const providers = (await providerRepository.list(workspaceId)).filter((item) => item.status === 'active');
-      const provider = input.providerConnectionId
-        ? providers.find((item) => item.id === input.providerConnectionId)
-        : providers.find((item) => item.providerType === 'openai-compatible' || item.providerType === 'gemini');
-      if (!provider) {
-        res.status(409).json({
-          error: input.providerConnectionId ? 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' : 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION',
-        });
-        return;
-      }
-      const selectedAdapter = provider.providerType === 'openai-compatible'
-        ? adapter
-        : provider.providerType === 'gemini'
-          ? geminiAdapter
-          : undefined;
-      if (!selectedAdapter) {
-        res.status(501).json({ error: 'PROVIDER_ADAPTER_NOT_IMPLEMENTED', providerType: provider.providerType });
-        return;
-      }
-
       if (!Array.isArray(input.messages) || input.messages.length === 0) {
         res.status(400).json({ error: 'MESSAGES_REQUIRED' });
         return;
       }
 
-      const secret = decryptSecret(provider.secretCiphertext, masterKey);
-      try {
-        const completion = await selectedAdapter.complete(input, provider, secret);
-        await traceRepository.record({
-          workspaceId,
-          providerConnectionId: provider.id,
-          model: completion.model,
-          inputTokens: completion.promptTokens,
-          outputTokens: completion.completionTokens,
-          latencyMs: Date.now() - startedAt,
-          status: 'succeeded',
-          safeMetadata: { model: completion.model },
-        });
-        res.json({
-          id: `chatcmpl_${crypto.randomUUID()}`,
-          object: 'chat.completion',
-          created: Math.floor(Date.now() / 1000),
-          model: completion.model,
-          choices: [{ index: 0, message: { role: 'assistant', content: completion.content }, finish_reason: 'stop' }],
-          usage: {
-            prompt_tokens: completion.promptTokens,
-            completion_tokens: completion.completionTokens,
-            total_tokens: completion.promptTokens + completion.completionTokens,
-          },
-        });
-      } catch {
-        await traceRepository.record({
-          workspaceId,
-          providerConnectionId: provider.id,
-          model: input.model ?? provider.modelDefault ?? 'unknown',
-          inputTokens: 0,
-          outputTokens: 0,
-          latencyMs: Date.now() - startedAt,
-          status: 'failed',
-          errorCode: 'PROVIDER_REQUEST_FAILED',
-          safeMetadata: { model: input.model ?? provider.modelDefault ?? 'unknown' },
-        });
-        res.status(502).json({ error: 'PROVIDER_REQUEST_FAILED' });
+      const providers = providersForCapability(
+        await providerRepository.list(workspaceId),
+        'chat',
+        input.providerConnectionId,
+      );
+      if (input.providerConnectionId && !providers.some((provider) => provider.id === input.providerConnectionId)) {
+        res.status(409).json({ error: 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' });
+        return;
       }
+      if (providers.length === 0) {
+        res.status(409).json({ error: 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION' });
+        return;
+      }
+
+      let lastError: unknown;
+      const attemptedProviderIds: string[] = [];
+      for (const provider of providers) {
+        const selectedAdapter = provider.providerType === 'openai-compatible'
+          ? adapter
+          : provider.providerType === 'gemini'
+            ? geminiAdapter
+            : undefined;
+        if (!selectedAdapter) continue;
+
+        const providerInput: GatewayRequest = {
+          ...input,
+          model: provider.id === input.providerConnectionId ? input.model : provider.modelDefault,
+        };
+        try {
+          const completion = await selectedAdapter.complete(
+            providerInput,
+            provider,
+            decryptSecret(provider.secretCiphertext, masterKey),
+          );
+          attemptedProviderIds.push(provider.id);
+          await traceRepository.record({
+            workspaceId,
+            providerConnectionId: provider.id,
+            model: completion.model,
+            inputTokens: completion.promptTokens,
+            outputTokens: completion.completionTokens,
+            latencyMs: Date.now() - startedAt,
+            status: 'succeeded',
+            safeMetadata: {
+              model: completion.model,
+              failoverUsed: attemptedProviderIds.length > 1,
+              attemptedProviderIds,
+            },
+          });
+          res.json({
+            id: `chatcmpl_${crypto.randomUUID()}`,
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: completion.model,
+            choices: [{ index: 0, message: { role: 'assistant', content: completion.content }, finish_reason: 'stop' }],
+            usage: {
+              prompt_tokens: completion.promptTokens,
+              completion_tokens: completion.completionTokens,
+              total_tokens: completion.promptTokens + completion.completionTokens,
+            },
+          });
+          return;
+        } catch (error) {
+          attemptedProviderIds.push(provider.id);
+          const errorCode = stableProviderErrorCode(error);
+          await traceRepository.record({
+            workspaceId,
+            providerConnectionId: provider.id,
+            model: providerInput.model ?? provider.modelDefault ?? 'unknown',
+            inputTokens: 0,
+            outputTokens: 0,
+            latencyMs: Date.now() - startedAt,
+            status: 'failed',
+            errorCode,
+            safeMetadata: { model: providerInput.model ?? provider.modelDefault ?? 'unknown' },
+          });
+          lastError = error;
+          if (!isRetryableProviderError(error)) break;
+        }
+      }
+
+      const code = stableProviderErrorCode(lastError);
+      const statusMatch = /^(?:OCR_)?PROVIDER_HTTP_(\\d{3})$/.exec(code);
+      res.status(statusMatch?.[1] === '429' ? 429 : 502).json({ error: code });
     } catch (error) {
       next(error);
     }

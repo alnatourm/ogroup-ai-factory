@@ -141,7 +141,7 @@ function requireModel(provider: ProviderConnection): string {
   return model;
 }
 
-function parseResult(value: unknown, model: string): DocumentOcrResult {
+export function parseDocumentOcrResult(value: unknown, engineVersion: string): DocumentOcrResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
   }
@@ -199,7 +199,7 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
     : null;
 
   return {
-    engineVersion: `gemini-interactions-prompt-json-v2:${model}`,
+    engineVersion,
     markdown: record.markdown,
     structuredJson: {
       schemaVersion: 'document-extraction-json-v2',
@@ -212,6 +212,73 @@ function parseResult(value: unknown, model: string): DocumentOcrResult {
     language: record.language,
     pageCount: record.pageCount as number,
   };
+}
+
+export class OpenAICompatibleDocumentOcrAdapter implements DocumentOcrAdapter {
+  constructor(private readonly fetchImpl: FetchLike = fetch) {}
+
+  supports(provider: ProviderConnection): boolean {
+    return provider.providerType === 'openai-compatible' && provider.config.documentOcrEnabled === true;
+  }
+
+  async extract(input: {
+    content: Buffer;
+    mediaType: AcceptedMediaType;
+    filename: string;
+    provider: ProviderConnection;
+    secret: string;
+  }): Promise<DocumentOcrResult> {
+    if (!this.supports(input.provider)) throw new Error('OCR_PROVIDER_NOT_ENABLED');
+    if (input.content.length > MAX_INLINE_OCR_BYTES) throw new Error('OCR_DOCUMENT_TOO_LARGE_FOR_INLINE');
+    const model = requireModel(input.provider);
+    const baseUrl = input.provider.baseUrl ?? 'https://api.openai.com/v1';
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const url = new URL('chat/completions', normalizedBase);
+    if (url.protocol !== 'https:') throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS');
+
+    const schemaPrompt = [
+      'Extract the attached document faithfully and return ONLY one JSON object.',
+      'Preserve Arabic reading order. Never guess missing values.',
+      'Fields: markdown, language, pageCount, textDirection, documentType, invoice, purchaseOrder, entities.',
+      'documentType: invoice, purchase_order, or other.',
+      'Invoice fields: supplierName, supplierTaxId, invoiceNumber, invoiceDate, dueDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+      'Purchase order fields: supplierName, supplierTaxId, purchaseOrderNumber, orderDate, expectedDeliveryDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+      'Use null for unsupported values. entities is an array of label, value, confidence.',
+    ].join(' ');
+
+    const response = await this.fetchImpl(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${input.secret}`, 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(60_000),
+      body: JSON.stringify({
+        model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: schemaPrompt },
+            {
+              type: 'file',
+              file: {
+                filename: input.filename,
+                file_data: `data:${input.mediaType};base64,${input.content.toString('base64')}`,
+              },
+            },
+          ],
+        }],
+        response_format: { type: 'json_object' },
+        stream: false,
+      }),
+    });
+    if (!response.ok) throw new Error(`OCR_PROVIDER_HTTP_${response.status}`);
+    const payload = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = payload.choices?.[0]?.message?.content;
+    if (!text) throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { throw new Error('OCR_PROVIDER_INVALID_RESPONSE'); }
+    return parseDocumentOcrResult(parsed, `openai-compatible-document-json-v1:${model}`);
+  }
 }
 
 export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
@@ -327,6 +394,6 @@ export class GeminiDocumentOcrAdapter implements DocumentOcrAdapter {
     } catch {
       throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
     }
-    return parseResult(parsed, model);
+    return parseDocumentOcrResult(parsed, `gemini-interactions-prompt-json-v2:${model}`);
   }
 }
