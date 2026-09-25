@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice, StructuredPurchaseOrder } from '../types/api.js';
+import type { DocumentProcessingJob, DocumentRecord, DocumentReviewRecord, DocumentStructuredJsonV2, StructuredInvoice, StructuredPurchaseOrder, SafeProviderConnection } from '../types/api.js';
 import { Card, CardBody, CardHeader } from '../components/common/Card.js';
 import { Badge } from '../components/common/Badge.js';
 import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
@@ -48,6 +48,8 @@ export const DocumentIntelligencePage: React.FC = () => {
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [persistedReview, setPersistedReview] = useState<DocumentReviewRecord | null>(null);
+  const [documentProviders, setDocumentProviders] = useState<SafeProviderConnection[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
 
   const describeDocumentError = (code: string) => {
     if (code === 'OCR_PROVIDER_DAILY_QUOTA_EXHAUSTED') {
@@ -77,6 +79,15 @@ export const DocumentIntelligencePage: React.FC = () => {
 
   useEffect(() => {
     void refreshHistory();
+    void ArabicAiIpaasClient.listProviderConnections().then((providers) => {
+      const eligible = providers.filter((provider) =>
+        provider.status === 'active' &&
+        (provider.providerType === 'gemini' || provider.config.documentOcrEnabled === true),
+      );
+      setDocumentProviders(eligible);
+      const gemini = eligible.find((provider) => provider.providerType === 'gemini');
+      setSelectedProviderId((current) => current || gemini?.id || eligible[0]?.id || '');
+    }).catch(() => setDocumentProviders([]));
   }, [refreshHistory]);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -89,7 +100,7 @@ export const DocumentIntelligencePage: React.FC = () => {
     setError(null);
     setIsProcessing(true);
     try {
-      setJob(await ArabicAiIpaasClient.processDocument(file));
+      setJob(await ArabicAiIpaasClient.processDocument(file, selectedProviderId || undefined));
       await refreshHistory();
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : 'DOCUMENT_REQUEST_FAILED';
@@ -146,7 +157,7 @@ export const DocumentIntelligencePage: React.FC = () => {
     setHistoryError(null);
     setError(null);
     try {
-      await ArabicAiIpaasClient.retryDocumentExtraction(document.id);
+      await ArabicAiIpaasClient.retryDocumentExtraction(document.id, selectedProviderId || undefined);
       await refreshHistory();
     } catch (caught) {
       const code = caught instanceof Error ? caught.message : 'DOCUMENT_EXTRACTION_RETRY_FAILED';
@@ -184,8 +195,8 @@ export const DocumentIntelligencePage: React.FC = () => {
         </h1>
         <p className="text-xs text-on-surface-variant font-arabic max-w-3xl">
           {language === 'ar'
-            ? 'يرفع المحتوى بعد التحقق الأمني، ثم يستخدم اتصال Gemini المفعّل صراحةً لاستخراج النص العربي والبنية. إذا لم يوجد اتصال مؤهل، يعرض النظام حالة غير مهيأة دون نجاح وهمي.'
-            : 'Content is uploaded after security validation, then an explicitly enabled Gemini connection extracts Arabic text and structure. Without an eligible connection, the system reports not configured without fake success.'}
+            ? 'يرفع المحتوى بعد التحقق الأمني، ثم يستخدم مزود الذكاء الاصطناعي الذي تختاره لاستخراج النص والبنية. لا يتم تحويل المستند بصمت إلى مزود آخر.'
+            : 'Content is uploaded after security validation, then the AI provider you select extracts text and structure. Documents are never silently switched to another provider.'}
         </p>
       </div>
 
@@ -196,6 +207,32 @@ export const DocumentIntelligencePage: React.FC = () => {
             subtitle={language === 'ar' ? 'PDF أو PNG أو JPEG أو TIFF — حتى 25 ميجابايت' : 'PDF, PNG, JPEG, or TIFF — up to 25 MB'}
           />
           <CardBody className="space-y-4">
+            <div className="space-y-2">
+              <label htmlFor="document-ai-provider" className="text-xs font-bold text-primary font-arabic">
+                {language === 'ar' ? 'مزود الذكاء الاصطناعي للمستند' : 'Document AI provider'}
+              </label>
+              <select
+                id="document-ai-provider"
+                value={selectedProviderId}
+                onChange={(event) => setSelectedProviderId(event.target.value)}
+                disabled={isProcessing}
+                className="w-full rounded-lg border border-outline-variant bg-white px-3 py-2 text-xs text-primary"
+              >
+                {documentProviders.length === 0 && (
+                  <option value="">{language === 'ar' ? 'لا يوجد مزود مستندات متاح' : 'No document provider available'}</option>
+                )}
+                {documentProviders.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name} — {provider.modelDefault || provider.providerType}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500 font-arabic">
+                {language === 'ar'
+                  ? 'سيُرسل هذا المستند إلى المزود الذي تختاره فقط. لا يتم التحويل تلقائياً إلى مزود آخر.'
+                  : 'This document is sent only to the provider you select. It will not silently switch to another provider.'}
+              </p>
+            </div>
             <label className="border-2 border-dashed border-slate-300 hover:border-secondary bg-slate-50/60 rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-colors">
               <input type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onChange={handleFileChange} disabled={isProcessing} className="sr-only" />
               <div className="w-12 h-12 rounded-full bg-blue-50 text-secondary flex items-center justify-center mb-3">
