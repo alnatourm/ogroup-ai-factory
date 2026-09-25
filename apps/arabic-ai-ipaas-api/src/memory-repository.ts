@@ -41,6 +41,30 @@ export class MemoryProviderRepository implements ProviderRepository {
     return provider?.workspaceId === workspaceId ? provider : undefined;
   }
 
+  async update(
+    workspaceId: string,
+    id: string,
+    updates: Partial<{
+      name: string;
+      baseUrl: string;
+      modelDefault: string;
+      secretCiphertext: string;
+      status: 'active' | 'disabled' | 'error';
+      config: Record<string, unknown>;
+    }>,
+  ): Promise<ProviderConnection | undefined> {
+    const current = await this.get(workspaceId, id);
+    if (!current) return undefined;
+    const updated: ProviderConnection = {
+      ...current,
+      ...updates,
+      config: updates.config ?? current.config,
+      updatedAt: new Date().toISOString(),
+    };
+    this.providers.set(id, updated);
+    return updated;
+  }
+
   async remove(workspaceId: string, id: string): Promise<boolean> {
     const provider = await this.get(workspaceId, id);
     if (!provider) return false;
