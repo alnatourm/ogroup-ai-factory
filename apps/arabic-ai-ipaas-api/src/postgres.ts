@@ -129,6 +129,46 @@ export class PostgresProviderRepository implements ProviderRepository {
     return row ? mapProvider(row) : undefined;
   }
 
+  async update(
+    workspaceId: string,
+    id: string,
+    updates: Partial<{
+      name: string;
+      baseUrl: string;
+      modelDefault: string;
+      secretCiphertext: string;
+      status: 'active' | 'disabled' | 'error';
+      config: Record<string, unknown>;
+    }>,
+  ): Promise<ProviderConnection | undefined> {
+    const current = await this.get(workspaceId, id);
+    if (!current) return undefined;
+    const result = await this.pool.query<ProviderRow>(
+      `update provider_connections
+          set name = $3,
+              base_url = $4,
+              model_default = $5,
+              secret_ciphertext = $6,
+              status = $7,
+              config = $8,
+              updated_at = now()
+        where workspace_id = $1 and id = $2
+        returning *`,
+      [
+        workspaceId,
+        id,
+        updates.name ?? current.name,
+        updates.baseUrl ?? current.baseUrl ?? null,
+        updates.modelDefault ?? current.modelDefault ?? null,
+        Buffer.from(updates.secretCiphertext ?? current.secretCiphertext, 'utf8'),
+        updates.status ?? current.status,
+        updates.config ?? current.config,
+      ],
+    );
+    const row = result.rows[0];
+    return row ? mapProvider(row) : undefined;
+  }
+
   async remove(workspaceId: string, id: string): Promise<boolean> {
     const result = await this.pool.query(
       'delete from provider_connections where workspace_id = $1 and id = $2',

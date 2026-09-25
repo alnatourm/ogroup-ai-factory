@@ -305,6 +305,47 @@ export function createApp(options: {
     }
   });
 
+  app.patch('/v1/provider-connections/:id', requireWriteRole, async (req, res, next) => {
+    try {
+      const workspaceId = getContext(req).workspaceId;
+      const providerId = getPathId(req);
+      const provider = await providerRepository.get(workspaceId, providerId);
+      if (!provider) {
+        res.status(404).json({ error: 'PROVIDER_NOT_FOUND' });
+        return;
+      }
+      if (!providerRepository.update) {
+        res.status(501).json({ error: 'PROVIDER_UPDATE_NOT_IMPLEMENTED' });
+        return;
+      }
+      const body = req.body as { documentOcrEnabled?: unknown };
+      if (typeof body.documentOcrEnabled !== 'boolean' || Object.keys(body).some((key) => key !== 'documentOcrEnabled')) {
+        res.status(400).json({ error: 'INVALID_PROVIDER_UPDATE' });
+        return;
+      }
+      if (
+        body.documentOcrEnabled &&
+        provider.providerType === 'openai-compatible' &&
+        provider.modelDefault !== 'qwen/qwen3.8-27b'
+      ) {
+        res.status(400).json({ error: 'DOCUMENT_VISION_MODEL_NOT_VERIFIED' });
+        return;
+      }
+      const updated = await providerRepository.update(workspaceId, providerId, {
+        config: {
+          ...provider.config,
+          documentOcrEnabled: body.documentOcrEnabled,
+          documentMediaTypes: body.documentOcrEnabled && provider.providerType === 'openai-compatible'
+            ? ['image/png', 'image/jpeg']
+            : provider.config.documentMediaTypes,
+        },
+      });
+      res.json({ data: redactProvider(updated!) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.delete('/v1/provider-connections/:id', requireWriteRole, async (req, res, next) => {
     try {
       const workspaceId = getContext(req).workspaceId;
