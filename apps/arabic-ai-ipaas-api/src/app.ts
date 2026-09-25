@@ -960,10 +960,18 @@ export function createApp(options: {
         res.status(409).json({ error: 'DOCUMENT_CONTENT_REQUIRED' });
         return;
       }
+      const requestedProviderId = typeof req.body?.providerConnectionId === 'string'
+        ? req.body.providerConnectionId
+        : undefined;
       const providers = providersForCapability(
         await providerRepository.list(context.workspaceId),
         'document-extraction',
+        requestedProviderId,
       );
+      if (requestedProviderId && !providers.some((provider) => provider.id === requestedProviderId)) {
+        res.status(409).json({ error: 'DOCUMENT_PROVIDER_NOT_AVAILABLE' });
+        return;
+      }
       const candidates = providers
         .map((provider) => ({
           provider,
