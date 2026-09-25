@@ -26,6 +26,7 @@ export const ProviderConnectionsPage: React.FC = () => {
   // Add Provider Modal State
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [updatingDocumentProviderId, setUpdatingDocumentProviderId] = useState<string | null>(null);
   const [newProviderType, setNewProviderType] = useState<ProviderType>('openai-compatible');
   const [newName, setNewName] = useState('');
   const [newBaseUrl, setNewBaseUrl] = useState('');
@@ -67,7 +68,7 @@ export const ProviderConnectionsPage: React.FC = () => {
         baseUrl: newBaseUrl.trim() || undefined,
         modelDefault: newModelDefault.trim() || undefined,
         apiKey: newApiKey.trim(),
-        ...(newProviderType === 'gemini' && enableDocumentOcr
+        ...((newProviderType === 'gemini' || newProviderType === 'openai-compatible') && enableDocumentOcr
           ? { config: { documentOcrEnabled: true, ocrModel: newModelDefault.trim() } }
           : {}),
       });
@@ -85,6 +86,21 @@ export const ProviderConnectionsPage: React.FC = () => {
       alert(err instanceof Error ? err.message : 'حدث خطأ أثناء إضافة الموفر');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDocumentProcessingToggle = async (provider: SafeProviderConnection) => {
+    setUpdatingDocumentProviderId(provider.id);
+    try {
+      const updated = await ArabicAiIpaasClient.updateProviderDocumentProcessing(
+        provider.id,
+        provider.config.documentOcrEnabled !== true,
+      );
+      setProviders((prev) => prev.map((item) => item.id === updated.id ? updated : item));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'فشل تحديث قدرة معالجة المستندات');
+    } finally {
+      setUpdatingDocumentProviderId(null);
     }
   };
 
@@ -269,10 +285,27 @@ export const ProviderConnectionsPage: React.FC = () => {
                   <span className="font-mono text-slate-700 break-all">{provider.baseUrl || 'الافتراضي للخدمة'}</span>
                 </div>
 
-                {provider.providerType === 'gemini' && provider.config.documentOcrEnabled === true && (
-                  <Badge variant="info" size="sm">
-                    {language === 'ar' ? 'معالجة المستندات مفعّلة' : 'Document processing enabled'}
-                  </Badge>
+                {(provider.providerType === 'gemini' || provider.providerType === 'openai-compatible') && (
+                  <div className="flex items-center gap-2">
+                    <Badge variant={provider.config.documentOcrEnabled === true ? 'info' : 'neutral'} size="sm">
+                      {provider.config.documentOcrEnabled === true
+                        ? (language === 'ar' ? 'معالجة المستندات مفعّلة' : 'Document processing enabled')
+                        : (language === 'ar' ? 'معالجة المستندات غير مفعّلة' : 'Document processing disabled')}
+                    </Badge>
+                    {provider.providerType === 'openai-compatible' && provider.modelDefault === 'qwen/qwen3.8-27b' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        isLoading={updatingDocumentProviderId === provider.id}
+                        onClick={() => handleDocumentProcessingToggle(provider)}
+                      >
+                        {provider.config.documentOcrEnabled === true
+                          ? (language === 'ar' ? 'تعطيل Vision OCR' : 'Disable Vision OCR')
+                          : (language === 'ar' ? 'تفعيل Vision OCR' : 'Enable Vision OCR')}
+                      </Button>
+                    )}
+                  </div>
                 )}
 
                 {/* STRICT REQUIREMENT: Secret is NEVER shown, only cipher badge */}
@@ -365,7 +398,7 @@ export const ProviderConnectionsPage: React.FC = () => {
             dir="ltr"
           />
 
-          {newProviderType === 'gemini' && (
+          {(newProviderType === 'gemini' || (newProviderType === 'openai-compatible' && newModelDefault.trim() === 'qwen/qwen3.8-27b')) && (
             <label className="flex items-start gap-3 p-3 border border-outline-variant rounded-lg bg-slate-50 text-xs font-arabic">
               <input
                 type="checkbox"
@@ -379,8 +412,12 @@ export const ProviderConnectionsPage: React.FC = () => {
                 </span>
                 <span className="block text-slate-500 mt-1">
                   {language === 'ar'
-                    ? 'يرسل محتوى المستند إلى Gemini API عند طلب الاستخراج فقط. لا يستخدم مخزن ملفات Google المؤقت في هذا الإصدار.'
-                    : 'Sends document content to the Gemini API only when extraction is requested. This version does not use Google temporary file storage.'}
+                    ? (newProviderType === 'gemini'
+                      ? 'يرسل محتوى المستند إلى Gemini API عند طلب الاستخراج فقط.'
+                      : 'يستخدم Qwen Vision للصور PNG/JPEG فقط. ملفات PDF وTIFF غير مدعومة عبر Groq Vision في هذا الإصدار.')
+                    : (newProviderType === 'gemini'
+                      ? 'Sends document content to the Gemini API only when extraction is requested.'
+                      : 'Uses Qwen Vision for PNG/JPEG images only. PDF and TIFF are not supported through Groq Vision in this version.')}
                 </span>
               </span>
             </label>
