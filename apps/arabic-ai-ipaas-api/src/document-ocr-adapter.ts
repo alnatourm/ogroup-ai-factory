@@ -141,6 +141,53 @@ function requireModel(provider: ProviderConnection): string {
   return model;
 }
 
+function parseProviderJsonText(text: string): unknown {
+  const trimmed = text.trim();
+  const candidates = [trimmed];
+  const fenced = trimmed.match(/^`{3}(?:json)?\s*([\s\S]*?)\s*`{3}$/i);
+  if (fenced?.[1]) candidates.push(fenced[1].trim());
+  const firstBrace = trimmed.indexOf('{');
+  const lastBrace = trimmed.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+  for (const candidate of candidates) {
+    try { return JSON.parse(candidate); } catch { /* try next safe candidate */ }
+  }
+  throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
+}
+
+function normalizeOpenAiDocumentResult(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const r = { ...(value as Record<string, unknown>) };
+  const documentTypeAliases: Record<string, 'invoice' | 'purchase_order' | 'other'> = {
+    invoice: 'invoice',
+    purchase_order: 'purchase_order',
+    'purchase order': 'purchase_order',
+    purchaseorder: 'purchase_order',
+    po: 'purchase_order',
+    other: 'other',
+  };
+  if (typeof r.documentType === 'string') {
+    r.documentType = documentTypeAliases[r.documentType.trim().toLowerCase()] ?? r.documentType;
+  }
+  if (typeof r.markdown !== 'string' || !r.markdown.trim()) {
+    const fallback = typeof r.text === 'string' ? r.text : typeof r.rawText === 'string' ? r.rawText : undefined;
+    if (fallback?.trim()) r.markdown = fallback.trim();
+  }
+  if (typeof r.language !== 'string' || !r.language.trim()) r.language = 'und';
+  if (!Number.isInteger(r.pageCount)) r.pageCount = 1;
+  if (!['rtl', 'ltr', 'mixed'].includes(r.textDirection as string)) r.textDirection = 'mixed';
+  if (!Array.isArray(r.entities)) r.entities = [];
+  if (r.documentType === 'invoice') {
+    r.purchaseOrder = null;
+  } else if (r.documentType === 'purchase_order') {
+    r.invoice = null;
+  } else if (r.documentType === 'other') {
+    r.invoice = null;
+    r.purchaseOrder = null;
+  }
+  return r;
+}
+
 export function parseDocumentOcrResult(value: unknown, engineVersion: string): DocumentOcrResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
@@ -237,13 +284,19 @@ export class OpenAICompatibleDocumentOcrAdapter implements DocumentOcrAdapter {
     if (url.protocol !== 'https:') throw new Error('PROVIDER_BASE_URL_MUST_USE_HTTPS');
 
     const schemaPrompt = [
-      'Extract the attached document faithfully and return ONLY one JSON object.',
+      'Extract the attached document faithfully and return ONLY one JSON object with no markdown fence or commentary.',
       'Preserve Arabic reading order. Never guess missing values.',
-      'Fields: markdown, language, pageCount, textDirection, documentType, invoice, purchaseOrder, entities.',
-      'documentType: invoice, purchase_order, or other.',
-      'Invoice fields: supplierName, supplierTaxId, invoiceNumber, invoiceDate, dueDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
-      'Purchase order fields: supplierName, supplierTaxId, purchaseOrderNumber, orderDate, expectedDeliveryDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
-      'Use null for unsupported values. entities is an array of label, value, confidence.',
+      'Top-level fields exactly: markdown, language, pageCount, textDirection, documentType, invoice, purchaseOrder, entities.',
+      'documentType must be invoice, purchase_order, or other.',
+      'markdown must be non-empty. language must be a short language code. pageCount must be an integer. textDirection must be rtl, ltr, or mixed.',
+      'For an invoice, purchaseOrder must be null. For a purchase order, invoice must be null. For other, both must be null.',
+      'Invoice fields exactly: supplierName, supplierTaxId, invoiceNumber, invoiceDate, dueDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+      'Purchase order fields exactly: supplierName, supplierTaxId, purchaseOrderNumber, orderDate, expectedDeliveryDate, currency, subtotal, taxTotal, grandTotal, confidence, lineItems.',
+      'Every confidence object must contain all corresponding scalar field names, each number 0 to 1 or null.',
+      'Invoice lineItems: description, quantity, unitPrice, taxAmount, lineTotal. Purchase-order lineItems: description, quantity, unitPrice, lineTotal.',
+      'All numeric amounts and quantities must be JSON strings such as "12.50", never JSON numbers. Missing values must be null.',
+      'Dates must be YYYY-MM-DD strings or null. Currency must be a three-letter uppercase code or null.',
+      'entities must be an array of objects with label, value, confidence.',
     ].join(' ');
 
     if (input.mediaType !== 'image/png' && input.mediaType !== 'image/jpeg') {
@@ -277,9 +330,8 @@ export class OpenAICompatibleDocumentOcrAdapter implements DocumentOcrAdapter {
     };
     const text = payload.choices?.[0]?.message?.content;
     if (!text) throw new Error('OCR_PROVIDER_INVALID_RESPONSE');
-    let parsed: unknown;
-    try { parsed = JSON.parse(text); } catch { throw new Error('OCR_PROVIDER_INVALID_RESPONSE'); }
-    return parseDocumentOcrResult(parsed, `openai-compatible-document-json-v1:${model}`);
+    const parsed = normalizeOpenAiDocumentResult(parseProviderJsonText(text));
+    return parseDocumentOcrResult(parsed, `openai-compatible-document-json-v2:${model}`);
   }
 }
 
