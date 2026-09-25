@@ -34,7 +34,7 @@ import { comparePurchaseOrderToInvoice } from './document-match.js';
 import { createMatchDigest, MemoryMatchDecisionRepository, parseMatchDecision, type MatchDecisionRepository } from './document-match-decision.js';
 import { parseStructuredInvoice } from './structured-invoice.js';
 import { parseStructuredPurchaseOrder } from './structured-purchase-order.js';
-import { OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
+import { GeminiProviderAdapter, OpenAICompatibleProviderAdapter, type ProviderAdapter } from './provider-adapter.js';
 import type { ProviderRepository } from './postgres.js';
 import { decryptSecret, encryptSecret, redactProvider, validateProviderBaseUrl } from './security.js';
 import {
@@ -216,6 +216,7 @@ export function createApp(options: {
   traceRepository?: TraceRepository;
   matchDecisionRepository?: MatchDecisionRepository;
   adapter?: ProviderAdapter;
+  geminiAdapter?: ProviderAdapter;
   apiKeyVerifier?: ApiKeyVerifier;
   browserSessionVerifier?: BrowserSessionVerifier;
   publicAuthRouter?: Router;
@@ -232,6 +233,7 @@ export function createApp(options: {
   const traceRepository = options.traceRepository ?? new MemoryTraceRepository();
   const matchDecisionRepository = options.matchDecisionRepository ?? new MemoryMatchDecisionRepository();
   const adapter = options.adapter ?? new OpenAICompatibleProviderAdapter();
+  const geminiAdapter = options.geminiAdapter ?? new GeminiProviderAdapter();
   const masterKey = options.masterKey ?? process.env.PROVIDER_SECRET_MASTER_KEY;
 
   if (!masterKey) {
@@ -1011,14 +1013,19 @@ export function createApp(options: {
       const providers = (await providerRepository.list(workspaceId)).filter((item) => item.status === 'active');
       const provider = input.providerConnectionId
         ? providers.find((item) => item.id === input.providerConnectionId)
-        : providers.find((item) => item.providerType === 'openai-compatible');
+        : providers.find((item) => item.providerType === 'openai-compatible' || item.providerType === 'gemini');
       if (!provider) {
         res.status(409).json({
           error: input.providerConnectionId ? 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' : 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION',
         });
         return;
       }
-      if (provider.providerType !== 'openai-compatible') {
+      const selectedAdapter = provider.providerType === 'openai-compatible'
+        ? adapter
+        : provider.providerType === 'gemini'
+          ? geminiAdapter
+          : undefined;
+      if (!selectedAdapter) {
         res.status(501).json({ error: 'PROVIDER_ADAPTER_NOT_IMPLEMENTED', providerType: provider.providerType });
         return;
       }
@@ -1030,7 +1037,7 @@ export function createApp(options: {
 
       const secret = decryptSecret(provider.secretCiphertext, masterKey);
       try {
-        const completion = await adapter.complete(input, provider, secret);
+        const completion = await selectedAdapter.complete(input, provider, secret);
         await traceRepository.record({
           workspaceId,
           providerConnectionId: provider.id,
