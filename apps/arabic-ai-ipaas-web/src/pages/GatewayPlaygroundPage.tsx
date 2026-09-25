@@ -42,7 +42,9 @@ export const GatewayPlaygroundPage: React.FC = () => {
       .then((connections) => {
         if (cancelled) return;
         const compatible = connections.filter(
-          (provider) => provider.status === 'active' && provider.providerType === 'openai-compatible',
+          (provider) =>
+            provider.status === 'active' &&
+            (provider.providerType === 'openai-compatible' || provider.providerType === 'gemini'),
         );
         setProviders(compatible);
         const first = compatible[0];
@@ -124,7 +126,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
               {language === 'ar' ? 'بوابة الذكاء الاصطناعي العربية' : 'Arabic AI Gateway'}
             </Badge>
             <Badge variant="success" size="md">
-              OpenAI-Compatible
+              BYOAI Multi-Provider
             </Badge>
           </div>
           <h1 className="text-xl lg:text-2xl font-bold text-primary font-arabic">
@@ -172,7 +174,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
                 >
                   {providers.length === 0 ? (
                     <option value="">
-                      {language === 'ar' ? 'لا يوجد موفر OpenAI-Compatible نشط' : 'No active OpenAI-Compatible provider'}
+                      {language === 'ar' ? 'لا يوجد موفر بوابة مدعوم ونشط' : 'No active supported Gateway provider'}
                     </option>
                   ) : (
                     providers.map((provider) => (
