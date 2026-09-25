@@ -250,8 +250,12 @@ export class ArabicAiIpaasClient {
       if (response.ok) {
         return (await response.json()) as GatewayResponse;
       }
-    } catch {
-      // Fall through to explicit mock gate.
+      await throwResponseError(response, `GATEWAY_REQUEST_FAILED_${response.status}`);
+    } catch (error) {
+      if (error instanceof Error && error.message !== 'Failed to fetch') {
+        throw error;
+      }
+      // Fall through only for a genuinely unreachable backend.
     }
 
     requireMockFallback();

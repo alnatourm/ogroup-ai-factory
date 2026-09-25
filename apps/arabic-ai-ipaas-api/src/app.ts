@@ -1007,10 +1007,15 @@ export function createApp(options: {
     const startedAt = Date.now();
     try {
       const workspaceId = getContext(req).workspaceId;
+      const input = req.body as GatewayRequest;
       const providers = (await providerRepository.list(workspaceId)).filter((item) => item.status === 'active');
-      const provider = providers[0];
+      const provider = input.providerConnectionId
+        ? providers.find((item) => item.id === input.providerConnectionId)
+        : providers.find((item) => item.providerType === 'openai-compatible');
       if (!provider) {
-        res.status(409).json({ error: 'NO_ACTIVE_PROVIDER_CONNECTION' });
+        res.status(409).json({
+          error: input.providerConnectionId ? 'ACTIVE_PROVIDER_CONNECTION_NOT_FOUND' : 'NO_COMPATIBLE_ACTIVE_PROVIDER_CONNECTION',
+        });
         return;
       }
       if (provider.providerType !== 'openai-compatible') {
@@ -1018,7 +1023,6 @@ export function createApp(options: {
         return;
       }
 
-      const input = req.body as GatewayRequest;
       if (!Array.isArray(input.messages) || input.messages.length === 0) {
         res.status(400).json({ error: 'MESSAGES_REQUIRED' });
         return;

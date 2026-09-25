@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useI18n } from '../i18n/I18nContext.js';
 import { ArabicAiIpaasClient } from '../api/client.js';
-import type { ChatMessage, GatewayResponse } from '../types/api.js';
+import type { ChatMessage, GatewayResponse, SafeProviderConnection } from '../types/api.js';
 import { Card, CardHeader, CardBody } from '../components/common/Card.js';
 import { Button } from '../components/common/Button.js';
 import { Badge } from '../components/common/Badge.js';
@@ -10,8 +10,11 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner.js';
 export const GatewayPlaygroundPage: React.FC = () => {
   const { language, t } = useI18n();
 
-  // Model & Inference Parameters
-  const [model, setModel] = useState('gpt-4o');
+  // Provider & inference parameters are loaded from the workspace BYOAI registry.
+  const [providers, setProviders] = useState<SafeProviderConnection[]>([]);
+  const [providerConnectionId, setProviderConnectionId] = useState('');
+  const [model, setModel] = useState('');
+  const [providerLoadError, setProviderLoadError] = useState('');
   const [temperature, setTemperature] = useState(0.3);
   const [normalizeDialect, setNormalizeDialect] = useState(true);
   const [maskPii, setMaskPii] = useState(true);
@@ -33,6 +36,39 @@ export const GatewayPlaygroundPage: React.FC = () => {
   const [latencyMs, setLatencyMs] = useState(0);
   const [copied, setCopied] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    ArabicAiIpaasClient.listProviderConnections()
+      .then((connections) => {
+        if (cancelled) return;
+        const compatible = connections.filter(
+          (provider) => provider.status === 'active' && provider.providerType === 'openai-compatible',
+        );
+        setProviders(compatible);
+        const first = compatible[0];
+        if (first) {
+          setProviderConnectionId(first.id);
+          setModel(first.modelDefault ?? '');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setProviderLoadError(error instanceof Error ? error.message : 'PROVIDER_CONNECTIONS_LOAD_FAILED');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleProviderChange = (id: string) => {
+    setProviderConnectionId(id);
+    const selected = providers.find((provider) => provider.id === id);
+    setModel(selected?.modelDefault ?? '');
+    setMessages([]);
+    setLatestResponse(null);
+  };
+
   const handleSendPrompt = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!promptInput.trim() || isLoading) return;
@@ -51,7 +87,8 @@ export const GatewayPlaygroundPage: React.FC = () => {
       ];
 
       const response = await ArabicAiIpaasClient.createChatCompletion({
-        model,
+        providerConnectionId,
+        model: model || undefined,
         messages: payloadMessages,
         temperature,
       });
@@ -128,15 +165,26 @@ export const GatewayPlaygroundPage: React.FC = () => {
                   {language === 'ar' ? 'النموذج النشط (Active Model)' : 'Model'}
                 </label>
                 <select
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  className="w-full h-10 px-3 bg-surface border border-outline-variant rounded-lg text-xs font-mono text-on-surface focus:outline-none"
+                  value={providerConnectionId}
+                  onChange={(e) => handleProviderChange(e.target.value)}
+                  disabled={providers.length === 0}
+                  className="w-full h-10 px-3 bg-surface border border-outline-variant rounded-lg text-xs font-mono text-on-surface focus:outline-none disabled:opacity-60"
                 >
-                  <option value="gpt-4o">Azure OpenAI — gpt-4o</option>
-                  <option value="gemini-1.5-pro">Vertex AI — gemini-1.5-pro</option>
-                  <option value="claude-3-5-sonnet">Anthropic — claude-3-5-sonnet</option>
-                  <option value="llama-3.3-70b-versatile">Groq — llama-3.3-70b</option>
+                  {providers.length === 0 ? (
+                    <option value="">
+                      {language === 'ar' ? 'لا يوجد موفر OpenAI-Compatible نشط' : 'No active OpenAI-Compatible provider'}
+                    </option>
+                  ) : (
+                    providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name} — {provider.modelDefault ?? 'default model'}
+                      </option>
+                    ))
+                  )}
                 </select>
+                {providerLoadError && (
+                  <p className="mt-1 text-[11px] text-red-600 font-mono">{providerLoadError}</p>
+                )}
               </div>
 
               <div>
@@ -352,7 +400,7 @@ export const GatewayPlaygroundPage: React.FC = () => {
                       size="sm"
                       isLoading={isLoading}
                       icon="send"
-                      disabled={!promptInput.trim()}
+                      disabled={!promptInput.trim() || !providerConnectionId}
                     >
                       {t('action.run')}
                     </Button>
