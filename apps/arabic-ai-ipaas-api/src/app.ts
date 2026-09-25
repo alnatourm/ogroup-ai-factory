@@ -1053,7 +1053,10 @@ export function createApp(options: {
             total_tokens: completion.promptTokens + completion.completionTokens,
           },
         });
-      } catch {
+      } catch (error) {
+        const providerErrorCode = error instanceof Error
+          ? (error.message.split(':')[0] ?? 'PROVIDER_REQUEST_FAILED')
+          : 'PROVIDER_REQUEST_FAILED';
         await traceRepository.record({
           workspaceId,
           providerConnectionId: provider.id,
@@ -1062,10 +1065,15 @@ export function createApp(options: {
           outputTokens: 0,
           latencyMs: Date.now() - startedAt,
           status: 'failed',
-          errorCode: 'PROVIDER_REQUEST_FAILED',
+          errorCode: providerErrorCode,
           safeMetadata: { model: input.model ?? provider.modelDefault ?? 'unknown' },
         });
-        res.status(502).json({ error: 'PROVIDER_REQUEST_FAILED' });
+        const providerStatusMatch = /^PROVIDER_HTTP_(\\d{3})$/.exec(providerErrorCode);
+        const upstreamStatus = providerStatusMatch ? Number(providerStatusMatch[1]) : undefined;
+        const responseStatus = upstreamStatus === 429 ? 429
+          : upstreamStatus === 401 || upstreamStatus === 403 ? 502
+            : 502;
+        res.status(responseStatus).json({ error: providerErrorCode });
       }
     } catch (error) {
       next(error);

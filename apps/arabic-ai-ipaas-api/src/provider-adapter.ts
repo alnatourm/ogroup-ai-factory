@@ -47,6 +47,8 @@ export class OpenAICompatibleProviderAdapter implements ProviderAdapter {
     });
 
     if (!response.ok) {
+      // Deliberately expose only the upstream HTTP status. Never persist or return
+      // provider response bodies because they may contain customer data or secrets.
       throw new Error(`PROVIDER_HTTP_${response.status}`);
     }
 
