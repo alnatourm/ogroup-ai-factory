@@ -3,6 +3,7 @@ import type { DocumentContentStore } from './document-content-store.js';
 import type { DocumentRepository } from './document-service.js';
 import type { DocumentOcrAdapter } from './document-ocr-adapter.js';
 import type { AcceptedMediaType, ProviderConnection } from './types.js';
+import { maskSensitiveText, maskSensitiveValue } from './pii-masking.js';
 
 function stableErrorCode(error: unknown): string {
   const message = error instanceof Error ? error.message : 'OCR_PROCESSING_FAILED';
@@ -18,6 +19,7 @@ export async function runDocumentOcr(input: {
   provider: ProviderConnection;
   secret: string;
   adapter: DocumentOcrAdapter;
+  piiMaskingEnabled?: boolean;
 }) {
   const document = await input.documentRepository.get(input.workspaceId, input.documentId);
   if (!document) throw new Error('DOCUMENT_NOT_FOUND');
@@ -49,8 +51,8 @@ export async function runDocumentOcr(input: {
       {
         schemaVersion: 'document-extraction-json-v2',
         engineVersion: result.engineVersion,
-        markdown: result.markdown,
-        structuredJson: result.structuredJson,
+        markdown: input.piiMaskingEnabled ? maskSensitiveText(result.markdown) : result.markdown,
+        structuredJson: input.piiMaskingEnabled ? maskSensitiveValue(result.structuredJson) : result.structuredJson,
         language: result.language,
         pageCount: result.pageCount,
         status: 'ready',
