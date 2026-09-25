@@ -137,7 +137,7 @@ function requireModel(provider: ProviderConnection): string {
     ? configured.trim()
     : provider.modelDefault?.trim();
   if (!model) throw new Error('OCR_MODEL_NOT_CONFIGURED');
-  if (!/^[A-Za-z0-9._-]+$/.test(model)) throw new Error('INVALID_OCR_MODEL');
+  if (!/^[A-Za-z0-9._\/-]+$/.test(model)) throw new Error('INVALID_OCR_MODEL');
   return model;
 }
 
