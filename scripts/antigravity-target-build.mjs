@@ -21,14 +21,48 @@ function collect(dir) {
   }
   return out;
 }
-const sources=collect(root);
+const sliceId=process.env.FACTORY_BUILD_SLICE?.trim()||'dashboard-shell-home';
+const slices={
+  'dashboard-shell-home': {
+    goal:'Implement only the shared application shell, navigation, language/RTL controls, and Factory Home screen.',
+    files:['src/App.tsx','src/styles.css','src/main.tsx']
+  },
+  'dashboard-create-product': {
+    goal:'Implement only the Create Product screen and the minimal shared code needed to reach it.',
+    files:['src/App.tsx','src/styles.css']
+  },
+  'dashboard-control-room': {
+    goal:'Implement only the Project Control Room screen and its measurable evidence/status presentation.',
+    files:['src/App.tsx','src/styles.css']
+  },
+  'dashboard-design-review': {
+    goal:'Implement only Design Approval and Product Review screens.',
+    files:['src/App.tsx','src/styles.css']
+  },
+  'dashboard-agents-health': {
+    goal:'Implement only Agent Registry and Factory Health/Watchdog screens.',
+    files:['src/App.tsx','src/styles.css']
+  },
+  'dashboard-attention-activity': {
+    goal:'Implement only Needs My Attention and Factory Activity screens.',
+    files:['src/App.tsx','src/styles.css']
+  }
+};
+const slice=slices[sliceId];
+if(!slice) throw new Error(`UNKNOWN_FACTORY_BUILD_SLICE: ${sliceId}`);
+const allSources=collect(root);
+const sourceAllow=new Set(['package.json','tsconfig.json','vite.config.ts','index.html',...slice.files]);
+const sources=allSources.filter(source=>sourceAllow.has(source.target));
 const instructions=`You are the OGroup AI Factory Antigravity Build Agent.
-Implement the APPROVED AI Factory Dashboard design in the supplied repository.
-Approved Stitch review: 100/100, 9/9 screens, Arabic 9/9, RTL 9/9, responsive 9/9, no blockers.
-Required screens: Factory Home, Create Product, Project Control Room, Design Approval, Product Review, Agent Registry, Factory Health/Watchdog, Needs My Attention, Activity.
-Preserve architecture and working behavior. Implement real bilingual Arabic/English product code, RTL-ready, responsive and Product-Owner-first.
+Implement ONE bounded slice of the APPROVED AI Factory Dashboard design.
+Slice ID: ${sliceId}
+Slice goal: ${slice.goal}
+Approved Stitch review: 100/100, Arabic/English, RTL-ready, responsive, no blockers.
+Do not implement other Dashboard screens in this interaction.
+Preserve existing working behavior outside this slice.
 Return ONLY JSON: {"summary":"...","files":[{"path":"src/...","content":"complete file contents"}]}.
-Only changed product files. Never modify .github, credentials, secrets, factory-evidence or lockfiles.`;
+Return only files changed for this slice. Prefer these files: ${slice.files.join(', ')}.
+Never modify .github, credentials, secrets, factory-evidence or lockfiles.`;
 const startResponse=await fetch(`${endpoint}/interactions`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':apiKey,'Api-Revision':'2026-05-20'},body:JSON.stringify({agent,input:instructions,environment:{type:'remote',sources:sources.map(s=>({type:'inline',target:s.target,content:s.content}))},background:true,store:true,agent_config:{type:'antigravity',max_total_tokens:50000}})});
 if(!startResponse.ok) throw new Error(`ANTIGRAVITY_HTTP_${startResponse.status}: ${(await startResponse.text()).slice(0,500)}`);
 let result=await startResponse.json();
@@ -70,5 +104,5 @@ if(!text) throw new Error(`ANTIGRAVITY_OUTPUT_MISSING: ${result.id}`);
 const payload=JSON.parse(text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
 if(!Array.isArray(payload.files)||!payload.files.length) throw new Error('ANTIGRAVITY_NO_IMPLEMENTATION_FILES');
 for(const file of payload.files){const p=String(file.path||'').replaceAll('\\\\','/');if(p.includes('..')||p.startsWith('/')||p.startsWith('.github/')||p.startsWith('factory-evidence/'))throw new Error(`ANTIGRAVITY_UNSAFE_PATH: ${p}`);if(typeof file.content!=='string')throw new Error(`ANTIGRAVITY_INVALID_CONTENT: ${p}`);}
-fs.writeFileSync(output,JSON.stringify({provider:'google-antigravity',interactionId:result.id,summary:payload.summary||null,files:payload.files}));
-console.log(JSON.stringify({type:'FACTORY_ANTIGRAVITY_BUILD_READY',interactionId:result.id,files:payload.files.map(f=>f.path)}));
+fs.writeFileSync(output,JSON.stringify({provider:'google-antigravity',interactionId:result.id,sliceId,summary:payload.summary||null,files:payload.files}));
+console.log(JSON.stringify({type:'FACTORY_ANTIGRAVITY_BUILD_READY',interactionId:result.id,sliceId,files:payload.files.map(f=>f.path)}));
