@@ -29,11 +29,26 @@ Required screens: Factory Home, Create Product, Project Control Room, Design App
 Preserve architecture and working behavior. Implement real bilingual Arabic/English product code, RTL-ready, responsive and Product-Owner-first.
 Return ONLY JSON: {"summary":"...","files":[{"path":"src/...","content":"complete file contents"}]}.
 Only changed product files. Never modify .github, credentials, secrets, factory-evidence or lockfiles.`;
-const response=await fetch(`${endpoint}/interactions`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':apiKey,'Api-Revision':'2026-05-20'},body:JSON.stringify({agent,input:instructions,environment:{type:'remote',sources:sources.map(s=>({type:'inline',target:s.target,content:s.content}))},background:false,store:true,agent_config:{type:'antigravity',max_total_tokens:50000}})});
-if(!response.ok) throw new Error(`ANTIGRAVITY_HTTP_${response.status}: ${(await response.text()).slice(0,500)}`);
-const result=await response.json();
-const text=result.output_text || (result.steps||[]).filter(s=>s.type==='model_output').flatMap(s=>s.content||[]).filter(x=>x.type==='text').map(x=>x.text).join('\n');
-if(!result.id || !text) throw new Error('ANTIGRAVITY_OUTPUT_INVALID');
+const startResponse=await fetch(`${endpoint}/interactions`,{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':apiKey,'Api-Revision':'2026-05-20'},body:JSON.stringify({agent,input:instructions,environment:{type:'remote',sources:sources.map(s=>({type:'inline',target:s.target,content:s.content}))},background:true,store:true,agent_config:{type:'antigravity',max_total_tokens:50000}})});
+if(!startResponse.ok) throw new Error(`ANTIGRAVITY_HTTP_${startResponse.status}: ${(await startResponse.text()).slice(0,500)}`);
+let result=await startResponse.json();
+if(!result.id) throw new Error('ANTIGRAVITY_RESPONSE_MISSING_ID');
+console.log(JSON.stringify({type:'ANTIGRAVITY_INTERACTION_STARTED',interactionId:result.id,status:result.status||'unknown'}));
+
+const extractText=(value)=>value.output_text || (value.steps||[]).filter(step=>step.type==='model_output').flatMap(step=>step.content||[]).filter(item=>item.type==='text').map(item=>item.text).filter(Boolean).join('\n');
+const terminal=new Set(['completed','failed','incomplete']);
+const deadline=Date.now()+8*60*1000;
+while(!terminal.has(result.status) && Date.now()<deadline){
+  await new Promise(resolve=>setTimeout(resolve,10000));
+  const poll=await fetch(`${endpoint}/interactions/${encodeURIComponent(result.id)}`,{headers:{'x-goog-api-key':apiKey}});
+  if(!poll.ok) throw new Error(`ANTIGRAVITY_POLL_HTTP_${poll.status}: ${(await poll.text()).slice(0,300)}`);
+  result=await poll.json();
+  console.log(JSON.stringify({type:'ANTIGRAVITY_INTERACTION_POLL',interactionId:result.id,status:result.status||'unknown'}));
+}
+if(!terminal.has(result.status)) throw new Error(`ANTIGRAVITY_POLL_TIMEOUT: ${result.id}`);
+if(result.status!=='completed') throw new Error(`ANTIGRAVITY_TERMINAL_${String(result.status).toUpperCase()}: ${result.id}`);
+const text=extractText(result);
+if(!text) throw new Error(`ANTIGRAVITY_OUTPUT_MISSING: ${result.id}`);
 const payload=JSON.parse(text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
 if(!Array.isArray(payload.files)||!payload.files.length) throw new Error('ANTIGRAVITY_NO_IMPLEMENTATION_FILES');
 for(const file of payload.files){const p=String(file.path||'').replaceAll('\\\\','/');if(p.includes('..')||p.startsWith('/')||p.startsWith('.github/')||p.startsWith('factory-evidence/'))throw new Error(`ANTIGRAVITY_UNSAFE_PATH: ${p}`);if(typeof file.content!=='string')throw new Error(`ANTIGRAVITY_INVALID_CONTENT: ${p}`);}
