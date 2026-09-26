@@ -11,12 +11,12 @@
 | Active product | AI Factory Dashboard |
 | Product repository | `alnatourm/AI-FACTORY-DASHBOARD` |
 | Factory work item | `ogroup-ai-factory#135` |
-| Current stage | Factory-owned Antigravity implementation execution |
+| Current stage | Repaired Factory-owned Antigravity async execution; awaiting green verification and next #135 run |
 | Product Owner design gate | **APPROVED** |
 | Last verified green point | Dashboard Quality Gate green; Watchdog cross-repo dispatch proven; Railway Watchdog deployed successfully before current Antigravity bridge changes |
-| Active execution | Factory Antigravity Target Build + latest Engineering Quality Gate |
-| Current blocker | No Product Owner blocker. Awaiting machine execution/verification. Previous ESLint Node-global failure was fixed in commit `30cc2b2`. |
-| Next automatic action | Factory finishes Antigravity result → Watchdog detects result → dispatch Dashboard worker → Dashboard applies implementation → typecheck/test/build → machine PR → exact-head reverify → merge → deployment verification → close #135 |
+| Active execution | Antigravity async polling repair `834c84d8` + Watchdog single-flight repair `3b260685`; Engineering Quality Gate and Railway deployment must verify them |
+| Current blocker | Previous synchronous Antigravity calls produced `ANTIGRAVITY_OUTPUT_INVALID` or `HeadersTimeoutError`. Repaired by background interaction + polling. No Product Owner blocker. |
+| Next automatic action | Quality Gate → Railway SUCCESS → Watchdog starts exactly one #135 Antigravity interaction → poll to completion → publish result → Dashboard worker → independent verification → machine PR → merge/deploy verification → close #135 |
 | Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised |
 | Secret rule | Antigravity credential stays in Factory. Never request or copy it into the Dashboard repo or chat. |
 | Completion rule | Real merged implementation + green verification + successful deployment. Provider/build success alone is not completion. |
