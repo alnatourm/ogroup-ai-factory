@@ -1,0 +1,44 @@
+name: Factory Watchdog Recovery
+
+on:
+  repository_dispatch:
+    types:
+      - factory-watchdog-continue
+      - factory-watchdog-retry
+      - factory-watchdog-fallback
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: factory-watchdog-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Factory
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Factory before recovery
+        run: npm test
+
+      - name: Record recovery event
+        env:
+          EVENT_NAME: ${{ github.event.action }}
+          RUN_ID: ${{ github.event.client_payload.runId }}
+        run: |
+          echo "WATCHDOG_RECOVERY_ACCEPTED event=$EVENT_NAME runId=$RUN_ID"
+          echo "The recovery event reached an executable GitHub Actions handler."
