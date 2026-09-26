@@ -83,8 +83,11 @@ const state: WatchdogStatePort = {
 };
 
 function targetRepository(issue: FactoryIssue): string {
-  const match = issue.body?.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
-  return match?.[1] ?? repository;
+  const body = issue.body ?? '';
+  const canonical = body.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
+  if (canonical?.[1]) return canonical[1];
+  const markdown = body.match(/^#{1,6}\s*Target repository\s*$\s*\`?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\`?\s*$/mi);
+  return markdown?.[1] ?? repository;
 }
 
 async function targetGithub(target: string, path: string, init?: RequestInit): Promise<Response> {
