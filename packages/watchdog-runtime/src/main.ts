@@ -3,6 +3,19 @@ import { runWatchdogLoop, type FactorySnapshot, type WatchdogRecoveryPort, type 
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
 const token = process.env.GITHUB_TOKEN?.trim();
 const intervalMs = Number(process.env.WATCHDOG_INTERVAL_MS ?? '60000');
+const recoveryCooldownMs = Number(process.env.WATCHDOG_RECOVERY_COOLDOWN_MS ?? '300000');
+const lastRecoveryAt = new Map<string, number>();
+
+function canRecover(runId: string): boolean {
+  const now = Date.now();
+  const previous = lastRecoveryAt.get(runId) ?? 0;
+  if (now - previous < recoveryCooldownMs) {
+    console.log(JSON.stringify({ type: 'WATCHDOG_RECOVERY_SUPPRESSED', runId, cooldownMs: recoveryCooldownMs, at: new Date().toISOString() }));
+    return false;
+  }
+  lastRecoveryAt.set(runId, now);
+  return true;
+}
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
@@ -34,7 +47,7 @@ const state: WatchdogStatePort = {
     const active = (runs.workflow_runs ?? []).some((run) => ['queued', 'in_progress', 'waiting', 'pending'].includes(run.status));
     const latest = (runs.workflow_runs ?? [])[0];
     const humanGate = prs.some((pr) => !pr.draft && (pr.labels ?? []).some((label) => label.name === 'human-gate'));
-    const workRemains = prs.length > 0 || active;
+    const workRemains = prs.length > 0;
     return [{
       runId: `github:${repository}`,
       workRemains,
@@ -55,9 +68,9 @@ async function dispatch(eventType: string, payload: Record<string, unknown>): Pr
 }
 
 const recovery: WatchdogRecoveryPort = {
-  async startNextRunnable(runId) { await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' }); },
-  async retryActiveJob(runId) { await dispatch('factory-watchdog-retry', { runId, reason: 'STALLED' }); },
-  async useApprovedFallback(runId) { await dispatch('factory-watchdog-fallback', { runId }); },
+  async startNextRunnable(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' }); },
+  async retryActiveJob(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-retry', { runId, reason: 'STALLED' }); },
+  async useApprovedFallback(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-fallback', { runId }); },
   async escalateHuman(runId, reason) {
     console.log(JSON.stringify({ type: 'WAITING_HUMAN', runId, reason, at: new Date().toISOString() }));
   },
