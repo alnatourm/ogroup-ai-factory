@@ -34,7 +34,7 @@ async function github(path: string, init?: RequestInit): Promise<Response> {
 }
 
 interface PullRequest { number: number; draft: boolean; updated_at: string; labels?: Array<{ name?: string }>; }
-interface FactoryIssue { number: number; title: string; updated_at: string; labels?: Array<{ name?: string }>; pull_request?: unknown; }
+interface FactoryIssue { number: number; title: string; body?: string | null; updated_at: string; labels?: Array<{ name?: string }>; pull_request?: unknown; }
 interface WorkflowRuns { workflow_runs?: Array<{ status: string; conclusion: string | null; updated_at: string; head_branch: string | null }>; }
 
 const state: WatchdogStatePort = {
@@ -82,6 +82,25 @@ const state: WatchdogStatePort = {
   },
 };
 
+function targetRepository(issue: FactoryIssue): string {
+  const match = issue.body?.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
+  return match?.[1] ?? repository;
+}
+
+async function dispatchTo(target: string, eventType: string, payload: Record<string, unknown>): Promise<void> {
+  const response = await fetch(`https://api.github.com/repos/${target}/dispatches`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ event_type: eventType, client_payload: payload }),
+  });
+  if (!response.ok) throw new Error(`GITHUB_${response.status}_dispatch_${target}`);
+}
+
 async function dispatch(eventType: string, payload: Record<string, unknown>): Promise<void> {
   await github('/dispatches', {
     method: 'POST',
@@ -91,7 +110,20 @@ async function dispatch(eventType: string, payload: Record<string, unknown>): Pr
 }
 
 const recovery: WatchdogRecoveryPort = {
-  async startNextRunnable(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' }); },
+  async startNextRunnable(runId) {
+    if (!canRecover(runId)) return;
+    if (runId.startsWith('factory-work:')) {
+      const issueNumber = Number(runId.split(':')[1]);
+      const response = await github(`/issues/${issueNumber}`);
+      const issue = await response.json() as FactoryIssue;
+      const target = targetRepository(issue);
+      if (target !== repository) {
+        await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
+        return;
+      }
+    }
+    await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' });
+  },
   async retryActiveJob(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-retry', { runId, reason: 'STALLED' }); },
   async useApprovedFallback(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-fallback', { runId }); },
   async escalateHuman(runId, reason) {
