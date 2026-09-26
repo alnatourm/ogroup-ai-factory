@@ -1,0 +1,76 @@
+name: Factory Auto Merge
+
+on:
+  workflow_run:
+    workflows: ["Engineering Quality Gate"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: factory-auto-merge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Merge eligible Factory PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const headSha = context.payload.workflow_run.head_sha;
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const pr = prs.find((candidate) => candidate.head.sha === headSha);
+            if (!pr) {
+              core.info(`No open PR found for successful Quality Gate SHA ${headSha}.`);
+              return;
+            }
+            if (pr.draft) {
+              core.info(`PR #${pr.number} is draft; auto-merge skipped.`);
+              return;
+            }
+            if (!pr.head.ref.startsWith('factory/')) {
+              core.info(`PR #${pr.number} is not a factory/* branch; auto-merge skipped.`);
+              return;
+            }
+            const labels = pr.labels.map((label) => typeof label === 'string' ? label : label.name).filter(Boolean);
+            if (labels.includes('human-gate')) {
+              core.info(`PR #${pr.number} has human-gate; auto-merge skipped.`);
+              return;
+            }
+            if (pr.base.ref !== 'main') {
+              core.info(`PR #${pr.number} does not target main; auto-merge skipped.`);
+              return;
+            }
+            const fresh = await github.rest.pulls.get({ owner, repo, pull_number: pr.number });
+            if (fresh.data.head.sha !== headSha || fresh.data.mergeable === false) {
+              core.setFailed(`PR #${pr.number} moved or is not mergeable.`);
+              return;
+            }
+            const result = await github.rest.pulls.merge({
+              owner,
+              repo,
+              pull_number: pr.number,
+              sha: headSha,
+              merge_method: 'squash',
+              commit_title: `${pr.title} (#${pr.number})`,
+            });
+            if (!result.data.merged) {
+              core.setFailed(`GitHub refused to merge PR #${pr.number}: ${result.data.message}`);
+              return;
+            }
+            core.info(`FACTORY_AUTO_MERGED pr=#${pr.number} sha=${result.data.sha}`);
