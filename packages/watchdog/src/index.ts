@@ -32,6 +32,9 @@ export function evaluateFactoryWatchdog(input: WatchdogInput): WatchdogDecision 
     return { state: 'WAITING_HUMAN', healthy: true, recoveryRequired: false, reason: 'A genuine human gate is active.' };
   }
   if (input.waitingDependency) {
+    if (input.workRemains && !input.activeJob) {
+      return { state: 'WAITING_DEPENDENCY', healthy: false, recoveryRequired: true, reason: 'Dependency-bound work is idle and must be re-checked.' };
+    }
     return { state: 'WAITING_DEPENDENCY', healthy: true, recoveryRequired: false, reason: 'An external dependency is being monitored.' };
   }
   if (!input.workRemains) {
@@ -54,7 +57,7 @@ export type RecoveryAction = 'START_NEXT_RUNNABLE' | 'RETRY_ACTIVE_JOB' | 'USE_A
 
 export function nextRecoveryAction(decision: WatchdogDecision, retryCount = 0, maxRetries = 2, fallbackAvailable = false): RecoveryAction {
   if (!decision.recoveryRequired) return 'NONE';
-  if (decision.state === 'IDLE_UNEXPECTED') return 'START_NEXT_RUNNABLE';
+  if (decision.state === 'IDLE_UNEXPECTED' || decision.state === 'WAITING_DEPENDENCY') return 'START_NEXT_RUNNABLE';
   if (decision.state === 'STALLED' && retryCount < maxRetries) return 'RETRY_ACTIVE_JOB';
   if (fallbackAvailable) return 'USE_APPROVED_FALLBACK';
   return 'ESCALATE_HUMAN';
