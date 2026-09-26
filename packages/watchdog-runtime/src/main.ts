@@ -82,6 +82,17 @@ const state: WatchdogStatePort = {
   },
 };
 
+async function factoryWorkStillRunnable(runId: string): Promise<boolean> {
+  if (!runId.startsWith('factory-work:')) return true;
+  const issueNumber = Number(runId.split(':')[1]);
+  if (!Number.isInteger(issueNumber) || issueNumber <= 0) return false;
+  const response = await github(`/issues/${issueNumber}`);
+  const issue = await response.json() as FactoryIssue & { state?: string };
+  if (issue.state === 'closed') return false;
+  const labels = new Set((issue.labels ?? []).map((label) => label.name).filter(Boolean));
+  return !labels.has('factory-status:completed') && !labels.has('factory-status:running') && !labels.has('factory-status:verifying') && !labels.has('factory-status:retrying');
+}
+
 async function dispatch(eventType: string, payload: Record<string, unknown>): Promise<void> {
   await github('/dispatches', {
     method: 'POST',
@@ -91,7 +102,14 @@ async function dispatch(eventType: string, payload: Record<string, unknown>): Pr
 }
 
 const recovery: WatchdogRecoveryPort = {
-  async startNextRunnable(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' }); },
+  async startNextRunnable(runId) {
+    if (!canRecover(runId)) return;
+    if (!await factoryWorkStillRunnable(runId)) {
+      console.log(JSON.stringify({ type: 'WATCHDOG_RECOVERY_STALE_SKIPPED', runId, at: new Date().toISOString() }));
+      return;
+    }
+    await dispatch('factory-watchdog-continue', { runId, reason: 'IDLE_UNEXPECTED' });
+  },
   async retryActiveJob(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-retry', { runId, reason: 'STALLED' }); },
   async useApprovedFallback(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-fallback', { runId }); },
   async escalateHuman(runId, reason) {
