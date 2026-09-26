@@ -101,10 +101,25 @@ async function targetGithub(target: string, path: string, init?: RequestInit): P
   return response;
 }
 
-async function hasMergedExecution(target: string, runId: string): Promise<boolean> {
+async function hasMergedImplementation(target: string, runId: string): Promise<boolean> {
   const response = await targetGithub(target, '/pulls?state=closed&sort=updated&direction=desc&per_page=30');
-  const pulls = await response.json() as Array<{ title?: string; merged_at?: string | null }>;
-  return pulls.some((pr) => pr.merged_at && pr.title === `Factory execution: ${runId}`);
+  const pulls = await response.json() as Array<{ number: number; title?: string; merged_at?: string | null }>;
+  const candidates = pulls.filter((pr) => pr.merged_at && pr.title === `Factory execution: ${runId}`);
+  for (const pr of candidates) {
+    const filesResponse = await targetGithub(target, `/pulls/${pr.number}/files?per_page=100`);
+    const files = await filesResponse.json() as Array<{ filename: string }>;
+    const implementationFiles = files.filter(({ filename }) =>
+      !filename.startsWith('factory-evidence/') &&
+      !filename.startsWith('.github/') &&
+      !filename.endsWith('.md')
+    );
+    if (implementationFiles.length > 0) {
+      console.log(JSON.stringify({ type: 'WATCHDOG_IMPLEMENTATION_EVIDENCE', runId, target, pr: pr.number, files: implementationFiles.map((file) => file.filename), at: new Date().toISOString() }));
+      return true;
+    }
+    console.log(JSON.stringify({ type: 'WATCHDOG_EVIDENCE_ONLY_PR_REJECTED', runId, target, pr: pr.number, at: new Date().toISOString() }));
+  }
+  return false;
 }
 
 async function completeFactoryIssue(issueNumber: number, runId: string, target: string): Promise<void> {
@@ -152,7 +167,7 @@ const recovery: WatchdogRecoveryPort = {
       const issue = await response.json() as FactoryIssue;
       const target = targetRepository(issue);
       if (target !== repository) {
-        if (await hasMergedExecution(target, runId)) {
+        if (await hasMergedImplementation(target, runId)) {
           await completeFactoryIssue(issueNumber, runId, target);
           return;
         }
