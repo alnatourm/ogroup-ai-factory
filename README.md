@@ -4,23 +4,27 @@
 
 > **Canonical handoff block. Read this section first whenever work resumes.**
 >
-> Keep this block current whenever the active product changes stage, a blocker is found or cleared, a human gate is reached, a PR is merged, or deployment/verification changes state. Do not append a second handoff block. Replace the values here and preserve historical detail in the checkpoint/history sections below.
+> Keep this block current whenever the active product changes stage, a blocker is found or cleared, a human gate is reached, a PR is merged, or deployment/verification changes state. Do not append a second handoff block. Replace the values here and preserve historical detail below.
 
 | Field | Current value |
 |---|---|
 | Active product | AI Factory Dashboard |
 | Product repository | `alnatourm/AI-FACTORY-DASHBOARD` |
 | Factory work item | `ogroup-ai-factory#135` |
-| Current stage | Repaired Factory-owned Antigravity async execution; awaiting green verification and next #135 run |
-| Product Owner design gate | **APPROVED** |
-| Last verified green point | Dashboard Quality Gate green; Watchdog cross-repo dispatch proven; Railway Watchdog deployed successfully before current Antigravity bridge changes |
-| Active execution | Antigravity async polling repair `834c84d8` + Watchdog single-flight repair `3b260685`; Engineering Quality Gate and Railway deployment must verify them |
-| Current blocker | Previous synchronous Antigravity calls produced `ANTIGRAVITY_OUTPUT_INVALID` or `HeadersTimeoutError`. Repaired by background interaction + polling. No Product Owner blocker. |
-| Next automatic action | Quality Gate → Railway SUCCESS → Watchdog starts exactly one #135 Antigravity interaction → poll to completion → publish result → Dashboard worker → independent verification → machine PR → merge/deploy verification → close #135 |
-| Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised |
-| Secret rule | Antigravity credential stays in Factory. Never request or copy it into the Dashboard repo or chat. |
-| Completion rule | Real merged implementation + green verification + successful deployment. Provider/build success alone is not completion. |
-| Last handoff update | 2026-09-26 |
+| Current stage | **BUILDING** via bounded Antigravity slices. Slice 1 `dashboard-shell-home` is the active production slice. |
+| Product Owner design gate | **APPROVED**. Stitch review previously passed 100/100 for 9/9 screens, Arabic/RTL/responsive checks green. |
+| Last verified green point | Slice architecture commits `7d050b38` and `98cb425a` passed Engineering Quality Gate. Railway Watchdog is deployed and cross-repo dispatch is proven. |
+| Active execution | Factory Antigravity Target Build run **36271942362** is in progress on commit `98cb425a`, using `dashboard-shell-home`. Watchdog supervises `factory-work:135`. |
+| Why slicing was required | Full-dashboard Antigravity interaction ended `incomplete` after **544,393 total tokens** with no final output. Credential/API were healthy. Factory now sends bounded source context and one implementation slice at a time. |
+| Current blocker | **NONE requiring Product Owner action.** The active slice must still prove successful provider completion and downstream verification. |
+| Build slice plan | 1. `dashboard-shell-home` → 2. `dashboard-create-product` → 3. `dashboard-control-room` → 4. `dashboard-design-review` → 5. `dashboard-agents-health` → 6. `dashboard-attention-activity`. |
+| Next automatic action | Antigravity finishes Slice 1 → Factory publishes machine build result → Watchdog dispatches Dashboard Product Worker → apply files → Dashboard Quality Gate/tests/build → machine PR → eligible green merge → deployment verification → advance to next incomplete slice. |
+| Failure path | If Antigravity returns failed/incomplete, preserve diagnostics on #135, repair/retry the bounded slice, and do not advance. If Dashboard verification fails, Fix/Factory repairs before merge. |
+| Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised. Do not ask Product Owner to perform routine testing, retries, PR merges, or deployment operations. |
+| Secret rule | Antigravity credential stays in Factory. Never request or copy it into Dashboard repo or chat. |
+| Completion rule | A slice is complete only after real implementation is merged, independent checks are green, and required deployment verification succeeds. Provider output alone is not completion. #135 closes only after the required Dashboard implementation is genuinely complete. |
+| Resume command | When returning, inspect: (1) run `36271942362` or its successor, (2) #135 result/diagnostic comments, (3) Dashboard Product Worker, (4) Dashboard Quality Gate/PR/merge, (5) deployment, then update this block and continue automatically. |
+| Last handoff update | 2026-09-26, after sliced Antigravity build dispatch |
 
 ### Mandatory handoff protocol
 
@@ -33,9 +37,6 @@ Every Factory stage transition must leave enough state for a new operator/sessio
 5. If waiting for a human, name the exact decision required. Otherwise keep **Human action required = NONE**.
 6. After a successful merge/deploy, move the pointer to the next incomplete production slice rather than leaving it on completed work.
 7. README handoff state must describe repository reality, not intended future state.
-
-
-OGroup AI Product Factory is the engineering foundation for building secure, reusable, AI-native software products across OGroup.
 
 ## Mission
 
