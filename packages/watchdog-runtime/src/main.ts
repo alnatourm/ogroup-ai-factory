@@ -34,19 +34,42 @@ async function github(path: string, init?: RequestInit): Promise<Response> {
 }
 
 interface PullRequest { number: number; draft: boolean; updated_at: string; labels?: Array<{ name?: string }>; }
+interface FactoryIssue { number: number; title: string; updated_at: string; labels?: Array<{ name?: string }>; pull_request?: unknown; }
 interface WorkflowRuns { workflow_runs?: Array<{ status: string; conclusion: string | null; updated_at: string; head_branch: string | null }>; }
 
 const state: WatchdogStatePort = {
   async listRuns(): Promise<FactorySnapshot[]> {
-    const [prsResponse, runsResponse] = await Promise.all([
+    const [prsResponse, runsResponse, issuesResponse] = await Promise.all([
       github('/pulls?state=open&per_page=100'),
       github('/actions/runs?per_page=50'),
+      github('/issues?state=open&labels=factory-work&per_page=100'),
     ]);
     const prs = await prsResponse.json() as PullRequest[];
     const runs = await runsResponse.json() as WorkflowRuns;
+    const issues = (await issuesResponse.json() as FactoryIssue[]).filter((issue) => !issue.pull_request);
     const active = (runs.workflow_runs ?? []).some((run) => ['queued', 'in_progress', 'waiting', 'pending'].includes(run.status));
     const latest = (runs.workflow_runs ?? [])[0];
     const humanGate = prs.some((pr) => !pr.draft && (pr.labels ?? []).some((label) => label.name === 'human-gate'));
+    if (issues.length > 0) {
+      return issues.map((issue) => {
+        const labels = new Set((issue.labels ?? []).map((label) => label.name).filter(Boolean));
+        const waitingHuman = labels.has('human-gate') || labels.has('factory-status:waiting-human');
+        const waitingDependency = labels.has('factory-status:waiting-dependency');
+        const completed = labels.has('factory-status:completed');
+        const issueActive = labels.has('factory-status:running') || labels.has('factory-status:verifying') || labels.has('factory-status:retrying');
+        return {
+          runId: `factory-work:${issue.number}`,
+          workRemains: !completed,
+          activeJob: issueActive,
+          lastActivityAt: issue.updated_at,
+          waitingHuman,
+          waitingDependency,
+          fallbackAvailable: labels.has('factory-fallback:approved'),
+        };
+      });
+    }
+
+    // Compatibility fallback until all Factory projects are represented by durable factory-work issues.
     const workRemains = prs.length > 0;
     return [{
       runId: `github:${repository}`,
