@@ -46,7 +46,25 @@ while(!terminal.has(result.status) && Date.now()<deadline){
   console.log(JSON.stringify({type:'ANTIGRAVITY_INTERACTION_POLL',interactionId:result.id,status:result.status||'unknown'}));
 }
 if(!terminal.has(result.status)) throw new Error(`ANTIGRAVITY_POLL_TIMEOUT: ${result.id}`);
-if(result.status!=='completed') throw new Error(`ANTIGRAVITY_TERMINAL_${String(result.status).toUpperCase()}: ${result.id}`);
+if(result.status!=='completed') {
+  const partialText=extractText(result);
+  const diagnostics={
+    type:'ANTIGRAVITY_TERMINAL_DIAGNOSTIC',
+    interactionId:result.id,
+    status:result.status,
+    environmentId:result.environment_id||null,
+    incompleteDetails:result.incomplete_details||result.incompleteDetails||null,
+    error:result.error||null,
+    usage:result.usage||result.usage_metadata||result.usageMetadata||null,
+    stepTypes:Array.isArray(result.steps)?result.steps.map(step=>step?.type||'unknown'):[],
+    partialOutputPresent:Boolean(partialText),
+    partialOutputLength:partialText?.length||0,
+    responseKeys:Object.keys(result).filter(key=>!['output_text','steps'].includes(key))
+  };
+  console.log(JSON.stringify(diagnostics));
+  fs.writeFileSync(output,JSON.stringify({provider:'google-antigravity',interactionId:result.id,status:result.status,diagnostics}));
+  throw new Error(`ANTIGRAVITY_TERMINAL_${String(result.status).toUpperCase()}: ${result.id}`);
+}
 const text=extractText(result);
 if(!text) throw new Error(`ANTIGRAVITY_OUTPUT_MISSING: ${result.id}`);
 const payload=JSON.parse(text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
