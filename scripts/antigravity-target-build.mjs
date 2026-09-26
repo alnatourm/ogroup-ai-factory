@@ -1,4 +1,4 @@
-/* global process, fetch, console */
+/* global process, fetch, console, setTimeout */
 import fs from 'node:fs';
 import path from 'node:path';
 
