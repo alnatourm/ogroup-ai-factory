@@ -27,7 +27,7 @@ jobs:
         continue-on-error: true
         run: node scripts/antigravity-target-build.mjs /tmp/factory-target /tmp/factory-antigravity-result.json
       - name: Publish Antigravity terminal diagnostics
-        if: steps.antigravity.outcome == 'failure' && hashFiles('/tmp/factory-antigravity-result.json') != ''
+        if: steps.antigravity.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
