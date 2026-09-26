@@ -125,6 +125,20 @@ async function hasMergedImplementation(target: string, runId: string): Promise<b
   return false;
 }
 
+async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
+  const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
+  const runs = await response.json() as { workflow_runs?: Array<{ id: number }> };
+  for (const run of runs.workflow_runs ?? []) {
+    const jobsResponse = await github(`/actions/runs/${run.id}/jobs?per_page=20`);
+    const jobs = await jobsResponse.json() as { jobs?: Array<{ steps?: Array<{ name?: string; status?: string }> }> };
+    if ((jobs.jobs ?? []).some((job) => (job.steps ?? []).some((step) => step.name === 'Run governed Antigravity build' && step.status === 'in_progress'))) {
+      console.log(JSON.stringify({ type: 'WATCHDOG_ANTIGRAVITY_SINGLE_FLIGHT', runId, activeWorkflowRun: run.id, at: new Date().toISOString() }));
+      return true;
+    }
+  }
+  return false;
+}
+
 async function hasAntigravityResult(issueNumber: number, runId: string): Promise<boolean> {
   const response = await github(`/issues/${issueNumber}/comments?per_page=100`);
   const comments = await response.json() as Array<{ body?: string | null }>;
@@ -182,7 +196,7 @@ const recovery: WatchdogRecoveryPort = {
         }
         if (await hasAntigravityResult(issueNumber, runId)) {
           await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
-        } else {
+        } else if (!(await hasActiveAntigravityBuild(runId))) {
           await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target });
         }
         return;
