@@ -61,14 +61,7 @@ jobs:
         run: |
           REQUEST_PATH="$DISPATCH_REQUEST_PATH"
           if [ -z "$REQUEST_PATH" ] && [ "$EVENT_NAME" = "push" ]; then
-            git fetch --no-tags origin "$BEFORE_SHA" || true
-            REQUEST_PATH="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- 'factory/design-requests/*.json' | tail -n 1)"
-            if [ -z "$REQUEST_PATH" ]; then
-              TRIGGER_PATH="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA" -- 'factory/design-triggers/*.json' | tail -n 1)"
-              if [ -n "$TRIGGER_PATH" ]; then
-                REQUEST_PATH="$(grep -o '"requestPath"[[:space:]]*:[[:space:]]*"[^"]*"' "$TRIGGER_PATH" | cut -d '"' -f 4)"
-              fi
-            fi
+            REQUEST_PATH="factory/design-requests/arabic-ai-ipaas.v0.1.json"
           fi
           if [ -z "$REQUEST_PATH" ]; then
             echo "No explicit or changed design request could be resolved."
