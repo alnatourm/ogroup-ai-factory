@@ -66,3 +66,79 @@ This repository defines and contains engineering governance, Factory orchestrati
 ## Current focus
 
 Build the AI Factory Dashboard as the lightweight control plane, using the existing Stitch design integration for rapid design and Antigravity for rapid implementation, while independent verification checks the resulting work.
+
+## Current Factory checkpoint — 2026-09-26
+
+This section is the durable recovery point for the current AI Factory Dashboard build. Start here when resuming work.
+
+### Repository roles
+
+- `alnatourm/ogroup-ai-factory` is the Factory supervisor/runtime: orchestrator, agents, Watchdog, quality gates and governed provider execution.
+- `alnatourm/AI-FACTORY-DASHBOARD` is the Product Owner control-plane product. Product implementation belongs there, not in this runtime repository.
+
+### Product and design state
+
+- Product: **AI Factory Dashboard**.
+- Core scope remains the nine v0.1 screens: Factory Home, Create Product, Project Control Room, Design Approval, Product Review, Agent Registry, Factory Health / Watchdog, Needs My Attention, and Activity.
+- Google Stitch approved revision project: `14995607057480771131`.
+- Stitch Design Review passed **100/100** with 9/9 screens, Arabic 9/9, RTL 9/9, responsive 9/9 and no blocking issues.
+- Product Owner explicitly approved the design.
+- Do not reopen the design gate unless implementation reveals a genuine new Product Owner decision.
+
+### Autonomous execution state
+
+- Durable Factory work item: **issue #135**, `AI Factory Dashboard: autonomous implementation in target repo`.
+- Target repository parsing was fixed so Markdown `## Target repository` declarations resolve correctly.
+- Watchdog is deployed on Railway and proved it can pick #135 automatically:
+  `factory-work:135 -> START_NEXT_RUNNABLE -> acted:true`.
+- Railway Watchdog service is the continuous supervisor. Build success alone is not deployment proof; require Railway `SUCCESS`.
+- The Dashboard `Factory Product Worker` has been successfully triggered through `repository_dispatch`, proving the cross-repository Watchdog bridge works.
+
+### Antigravity credential boundary
+
+A failed Dashboard worker proved that `OGROUP_ANTIGRAVITY_API_KEY` is not available in the Dashboard repository. This is intentional architecture: **do not copy or request the key for the Dashboard**.
+
+The corrected design is:
+
+1. Watchdog sees external target work such as #135.
+2. Factory dispatches `factory-antigravity-build` inside this repository.
+3. Factory runs Antigravity using its Factory-owned `OGROUP_ANTIGRAVITY_API_KEY`.
+4. Factory publishes the machine build payload back to the Factory work item.
+5. Watchdog detects that result and dispatches `factory-work-execute` to the Dashboard.
+6. Dashboard applies the Factory-generated result, independently runs typecheck/tests/build, creates a real implementation PR, re-verifies the exact PR head, then merges.
+7. Watchdog accepts completion only when a merged implementation PR contains real product files. Evidence-only PRs are rejected.
+
+Relevant implementation:
+- `.github/workflows/factory-antigravity-target-build.yml`
+- `scripts/antigravity-target-build.mjs`
+- `packages/watchdog-runtime/src/main.ts`
+- Dashboard: `factory/apply-factory-antigravity-result.mjs`
+- Dashboard: `.github/workflows/factory-product-worker.yml`
+
+### Latest failure and fix
+
+The first Engineering Quality Gate after adding `scripts/antigravity-target-build.mjs` failed only because ESLint treated Node globals as undefined: `process`, `fetch`, and `console` (7 lint errors). The script now explicitly declares those runtime globals. No Factory architecture change was required for that lint repair.
+
+### Resume checklist
+
+When resuming, do not restart the project or redesign the flow. Continue from here:
+
+1. Confirm the Engineering Quality Gate for the Node-global lint fix is green.
+2. Confirm Railway has deployed the latest Watchdog commit with `SUCCESS`.
+3. Inspect the active/latest **Factory Antigravity Target Build** for #135.
+4. If Antigravity succeeds, confirm a complete `FACTORY_ANTIGRAVITY_RESULT` exists on issue #135.
+5. Confirm Watchdog automatically fires a fresh Dashboard **Factory Product Worker**.
+6. Inspect Dashboard verification and the resulting `Factory execution: factory-work:135` implementation PR.
+7. Require real implementation files and green Dashboard Quality Gate before merge/completion.
+8. Verify the merged product and deployment before closing #135.
+9. After verified completion, continue to the next incomplete Dashboard production slice automatically unless a genuine human decision is required.
+
+### Operating rules
+
+- Product Owner should not manage branches, PRs, CI retries, routine failures or provider plumbing.
+- Never ask the Product Owner to paste secrets into chat.
+- Provider completion is not Factory completion.
+- Build success is not deploy success.
+- Do not claim a fix until verification proves it.
+- Missing capability or credential access must surface as configuration/stalled, never a false PASS.
+- Keep Factory runtime code here and Dashboard product code in the Dashboard repository.
