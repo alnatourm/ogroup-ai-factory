@@ -23,7 +23,34 @@ jobs:
       - name: Checkout public target source
         run: git clone --depth 1 "https://github.com/$TARGET_REPOSITORY.git" /tmp/factory-target
       - name: Run governed Antigravity build
+        id: antigravity
+        continue-on-error: true
         run: node scripts/antigravity-target-build.mjs /tmp/factory-target /tmp/factory-antigravity-result.json
+      - name: Publish Antigravity terminal diagnostics
+        if: steps.antigravity.outcome == 'failure' && hashFiles('/tmp/factory-antigravity-result.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('/tmp/factory-antigravity-result.json','utf8'));const d=p.diagnostics||{};console.log(JSON.stringify({type:'FACTORY_ANTIGRAVITY_DIAGNOSTIC',interactionId:p.interactionId,status:p.status,diagnostics:d}))"
+          BODY="FACTORY_ANTIGRAVITY_DIAGNOSTIC $RUN_ID"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gzip -c /tmp/factory-antigravity-result.json | base64 -w0 > /tmp/payload.b64
+          BUILD_ID="$GITHUB_RUN_ID"
+          split -b 50000 -d -a 3 /tmp/payload.b64 /tmp/chunk-
+          TOTAL="$(find /tmp -maxdepth 1 -name 'chunk-*' | wc -l | tr -d ' ')"
+          INDEX=0
+          for FILE in /tmp/chunk-*; do
+            INDEX=$((INDEX+1))
+            BODY="FACTORY_ANTIGRAVITY_RESULT $RUN_ID $BUILD_ID $INDEX/$TOTAL"$'\n'"$(cat "$FILE")"
+            gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+          done
+\n'"$(cat /tmp/factory-antigravity-result.json)"
+          gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+      - name: Fail workflow when Antigravity did not complete
+        if: steps.antigravity.outcome == 'failure'
+        run: exit 1
       - name: Publish machine build payload to Factory work item
         env:
           GH_TOKEN: ${{ github.token }}
