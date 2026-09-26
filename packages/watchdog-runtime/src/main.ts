@@ -125,6 +125,12 @@ async function hasMergedImplementation(target: string, runId: string): Promise<b
   return false;
 }
 
+async function hasAntigravityResult(issueNumber: number, runId: string): Promise<boolean> {
+  const response = await github(`/issues/${issueNumber}/comments?per_page=100`);
+  const comments = await response.json() as Array<{ body?: string | null }>;
+  return comments.some((comment) => (comment.body ?? '').startsWith(`FACTORY_ANTIGRAVITY_RESULT ${runId} `));
+}
+
 async function completeFactoryIssue(issueNumber: number, runId: string, target: string): Promise<void> {
   await github(`/issues/${issueNumber}`, {
     method: 'PATCH',
@@ -174,7 +180,11 @@ const recovery: WatchdogRecoveryPort = {
           await completeFactoryIssue(issueNumber, runId, target);
           return;
         }
-        await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
+        if (await hasAntigravityResult(issueNumber, runId)) {
+          await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
+        } else {
+          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target });
+        }
         return;
       }
     }
