@@ -1,12 +1,24 @@
 {
   "workflow": "Design Review Agent",
-  "status": "NOT_RUN",
-  "score": null,
-  "projectId": null,
-  "summary": null,
-  "blockingIssues": [],
+  "status": "DESIGN_REVISION_REQUIRED",
+  "score": 85,
+  "projectId": "17774169687814706641",
+  "summary": {
+    "expectedScreens": 9,
+    "generatedScreens": 9,
+    "passedScreens": 9,
+    "rtlScreens": 9,
+    "arabicScreens": 0,
+    "interactiveScreens": 9
+  },
+  "blockingIssues": [
+    "Arabic-content coverage is below the 75% Factory threshold."
+  ],
   "secretEvidence": [],
-  "limitations": [],
-  "runId": "36265353780",
-  "commitSha": "0d48ad2ce708bb8078dbc6d1206233511ea22334"
+  "limitations": [
+    "v0.1 reviews generated HTML structure/content and does not yet perform pixel-level visual judgment.",
+    "A future visual reviewer should inspect rendered screenshots for spacing, hierarchy, clipping, contrast and cross-screen consistency."
+  ],
+  "runId": "36265494910",
+  "commitSha": "b9f241b378af7cc127dc7ae5ab24fa133b43ddbd"
 }

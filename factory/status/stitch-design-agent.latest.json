@@ -1,10 +1,10 @@
 {
   "workflow": "Stitch Design Agent",
-  "status": "FAILED",
-  "runId": "36265353780",
+  "status": "SUCCESS",
+  "runId": "36265494910",
   "runAttempt": "1",
-  "commitSha": "0d48ad2ce708bb8078dbc6d1206233511ea22334",
+  "commitSha": "b9f241b378af7cc127dc7ae5ab24fa133b43ddbd",
   "requestPath": "factory/design-requests/ai-factory-dashboard.v0.1.json",
-  "resultArtifactExpected": false,
+  "resultArtifactExpected": true,
   "error": null
 }
