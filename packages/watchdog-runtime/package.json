@@ -1,0 +1,10 @@
+{
+  "name": "@ogroup/watchdog-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "tsx src/main.ts" },
+  "dependencies": {
+    "@ogroup/watchdog-runner": "0.1.0"
+  }
+}
