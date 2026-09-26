@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   actions: write
+  issues: write
 
 concurrency:
   group: factory-watchdog-recovery
@@ -31,8 +32,35 @@ jobs:
       - name: Install dependencies
         run: npm install --ignore-scripts
 
-      - name: Verify Factory before recovery
+      - name: Mark Factory work RUNNING
+        if: startsWith(github.event.client_payload.runId, 'factory-work:')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = Number(context.payload.client_payload.runId.split(':')[1]);
+            const { owner, repo } = context.repo;
+            const issue = await github.rest.issues.get({ owner, repo, issue_number });
+            const labels = issue.data.labels.map(x => typeof x === 'string' ? x : x.name).filter(Boolean).filter(x => !x.startsWith('factory-status:'));
+            labels.push('factory-work', 'factory-status:running');
+            await github.rest.issues.setLabels({ owner, repo, issue_number, labels });
+            await github.rest.issues.createComment({ owner, repo, issue_number, body: 'Factory Watchdog started deterministic worker verification. Workflow run: ' + context.runId });
+
+      - name: Execute deterministic Factory verification worker
         run: npm test
+
+      - name: Mark Factory work COMPLETED
+        if: success() && startsWith(github.event.client_payload.runId, 'factory-work:')
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = Number(context.payload.client_payload.runId.split(':')[1]);
+            const { owner, repo } = context.repo;
+            const issue = await github.rest.issues.get({ owner, repo, issue_number });
+            const labels = issue.data.labels.map(x => typeof x === 'string' ? x : x.name).filter(Boolean).filter(x => !x.startsWith('factory-status:'));
+            labels.push('factory-work', 'factory-status:completed');
+            await github.rest.issues.setLabels({ owner, repo, issue_number, labels });
+            await github.rest.issues.createComment({ owner, repo, issue_number, body: 'Factory worker verification completed successfully. Workflow run: ' + context.runId });
+            await github.rest.issues.update({ owner, repo, issue_number, state: 'closed', state_reason: 'completed' });
 
       - name: Record recovery event
         env:
