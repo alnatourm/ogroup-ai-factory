@@ -1,5 +1,40 @@
 # OGroup AI Product Factory
 
+## 🔖 FACTORY RESUME HERE
+
+> **Canonical handoff block. Read this section first whenever work resumes.**
+>
+> Keep this block current whenever the active product changes stage, a blocker is found or cleared, a human gate is reached, a PR is merged, or deployment/verification changes state. Do not append a second handoff block. Replace the values here and preserve historical detail in the checkpoint/history sections below.
+
+| Field | Current value |
+|---|---|
+| Active product | AI Factory Dashboard |
+| Product repository | `alnatourm/AI-FACTORY-DASHBOARD` |
+| Factory work item | `ogroup-ai-factory#135` |
+| Current stage | Factory-owned Antigravity implementation execution |
+| Product Owner design gate | **APPROVED** |
+| Last verified green point | Dashboard Quality Gate green; Watchdog cross-repo dispatch proven; Railway Watchdog deployed successfully before current Antigravity bridge changes |
+| Active execution | Factory Antigravity Target Build + latest Engineering Quality Gate |
+| Current blocker | No Product Owner blocker. Awaiting machine execution/verification. Previous ESLint Node-global failure was fixed in commit `30cc2b2`. |
+| Next automatic action | Factory finishes Antigravity result → Watchdog detects result → dispatch Dashboard worker → Dashboard applies implementation → typecheck/test/build → machine PR → exact-head reverify → merge → deployment verification → close #135 |
+| Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised |
+| Secret rule | Antigravity credential stays in Factory. Never request or copy it into the Dashboard repo or chat. |
+| Completion rule | Real merged implementation + green verification + successful deployment. Provider/build success alone is not completion. |
+| Last handoff update | 2026-09-26 |
+
+### Mandatory handoff protocol
+
+Every Factory stage transition must leave enough state for a new operator/session to continue without reconstructing chat history:
+
+1. Update **Current stage**, **Last verified green point**, **Active execution**, **Current blocker**, and **Next automatic action** above.
+2. Record concrete identifiers when available: issue, PR, workflow run, deployment, commit, target repository.
+3. Never mark a stage complete from provider output alone. Record the independent verification that made it green.
+4. If blocked, state the exact machine-readable or reproducible blocker and which component owns the fix.
+5. If waiting for a human, name the exact decision required. Otherwise keep **Human action required = NONE**.
+6. After a successful merge/deploy, move the pointer to the next incomplete production slice rather than leaving it on completed work.
+7. README handoff state must describe repository reality, not intended future state.
+
+
 OGroup AI Product Factory is the engineering foundation for building secure, reusable, AI-native software products across OGroup.
 
 ## Mission
