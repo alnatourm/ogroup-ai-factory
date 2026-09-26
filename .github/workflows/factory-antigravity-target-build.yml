@@ -16,6 +16,7 @@ jobs:
       TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
+      FACTORY_BUILD_SLICE: ${{ github.event.client_payload.buildSlice || 'dashboard-shell-home' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
