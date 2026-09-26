@@ -87,6 +87,40 @@ function targetRepository(issue: FactoryIssue): string {
   return match?.[1] ?? repository;
 }
 
+async function targetGithub(target: string, path: string, init?: RequestInit): Promise<Response> {
+  const response = await fetch(`https://api.github.com/repos/${target}${path}`, {
+    ...init,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(init?.headers ?? {}),
+    },
+  });
+  if (!response.ok) throw new Error(`GITHUB_${response.status}_${target}_${path}`);
+  return response;
+}
+
+async function hasMergedExecution(target: string, runId: string): Promise<boolean> {
+  const response = await targetGithub(target, '/pulls?state=closed&sort=updated&direction=desc&per_page=30');
+  const pulls = await response.json() as Array<{ title?: string; merged_at?: string | null }>;
+  return pulls.some((pr) => pr.merged_at && pr.title === `Factory execution: ${runId}`);
+}
+
+async function completeFactoryIssue(issueNumber: number, runId: string, target: string): Promise<void> {
+  await github(`/issues/${issueNumber}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: 'closed', state_reason: 'completed' }),
+  });
+  await github(`/issues/${issueNumber}/labels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ labels: ['factory-status:completed'] }),
+  });
+  console.log(JSON.stringify({ type: 'WATCHDOG_COMPLETED_FROM_MERGED_PR', runId, target, issueNumber, at: new Date().toISOString() }));
+}
+
 async function dispatchTo(target: string, eventType: string, payload: Record<string, unknown>): Promise<void> {
   const response = await fetch(`https://api.github.com/repos/${target}/dispatches`, {
     method: 'POST',
@@ -118,6 +152,10 @@ const recovery: WatchdogRecoveryPort = {
       const issue = await response.json() as FactoryIssue;
       const target = targetRepository(issue);
       if (target !== repository) {
+        if (await hasMergedExecution(target, runId)) {
+          await completeFactoryIssue(issueNumber, runId, target);
+          return;
+        }
         await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
         return;
       }
