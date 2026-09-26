@@ -1,0 +1,61 @@
+{
+  "productId": "ai-factory-dashboard",
+  "projectTitle": "OGroup AI Factory Dashboard",
+  "screens": [
+    {
+      "key": "factory-home",
+      "title": "Factory Home",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the OGroup AI Factory Dashboard home as a premium enterprise AI control center. Desktop-first responsive, Arabic/English ready with RTL support. Answer three questions immediately: what is being built, is the Factory actually working, and does anything need the Product Owner. Include Build New Product, Active Projects, Running Jobs, Needs Attention, and Factory Health. Project rows show status, current stage, assigned worker, last activity, and required human action. Use evidence-based stages, never fake AI completion percentages. Clean minimal professional UI, not futuristic decoration."
+    },
+    {
+      "key": "create-product",
+      "title": "Create Product",
+      "deviceType": "DESKTOP",
+      "prompt": "Design Create Product for OGroup AI Factory. Make product creation conversational and simple for a Product Owner, not an engineer. Main prompt: What do you want to build? Large idea textarea, upload documents/images/URLs, essential business constraints, and Start Factory. Hide advanced technical settings by default. Arabic/English ready and RTL. The experience should make it clear the Factory handles engineering orchestration after the idea."
+    },
+    {
+      "key": "project-control-room",
+      "title": "Project Control Room",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the Project Control Room for OGroup AI Factory. Show measurable stages Idea, Product, Architecture, Design, Build, QA, Security, Staging, Review, Production. Prominently show current stage, current job, assigned agent/provider, start time, last heartbeat/activity, health, retries, and evidence such as files changed and tests. Technical logs stay behind View Engineering Details. Status model includes QUEUED, RUNNING, VERIFYING, RETRYING, WAITING_DEPENDENCY, WAITING_HUMAN, COMPLETED, FAILED, STALLED. Enterprise control center, RTL-ready."
+    },
+    {
+      "key": "design-approval",
+      "title": "Design Approval",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the human Design Approval gate for OGroup AI Factory. Show generated screen thumbnails/previews, Design Review evidence, responsive and Arabic RTL checks, and clear Preview, Request Changes, Approve Design & Continue actions. Explain that approval authorizes autonomous routine engineering execution to staging. Keep the decision simple and visual. Enterprise UI, bilingual and RTL-ready."
+    },
+    {
+      "key": "product-review",
+      "title": "Product Review",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the Product Review gate for OGroup AI Factory. Product Owner can open staging, inspect the working product, and see concise Build, QA, Security, CI and Deployment evidence. Primary actions: Send Feedback and Approve Production. Keep engineering noise collapsed unless requested. Production approval must clearly remain a human decision. Responsive enterprise UI, Arabic/English RTL-ready."
+    },
+    {
+      "key": "agent-registry",
+      "title": "Agent Registry",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the Agent Registry screen for OGroup AI Factory. Table/cards show Factory Job, Assigned Agent or executor, Provider, Status, Current Work, Last Heartbeat, and Fallback. Clearly distinguish orchestration stages from concrete connected execution agents. Include Stitch for design and Google Antigravity for build where assigned. Make missing capability visible, never imply an unavailable agent is working. Clean operational enterprise UI."
+    },
+    {
+      "key": "factory-health",
+      "title": "Factory Health and Watchdog",
+      "deviceType": "DESKTOP",
+      "prompt": "Design Factory Health and Watchdog for OGroup AI Factory. Watchdog is a deterministic independent service, not an LLM. Show health and heartbeat for Orchestrator, Watchdog, GitHub, CI, Deployment, Stitch, Antigravity and configured general AI provider. Include current jobs, stalled jobs, retries, provider errors, quota problems and recovery actions. Make automatic recovery and escalation states easy to understand. RTL-ready enterprise operations UI."
+    },
+    {
+      "key": "needs-attention",
+      "title": "Needs My Attention",
+      "deviceType": "DESKTOP",
+      "prompt": "Design Needs My Attention for the OGroup AI Factory Product Owner. Show only meaningful human decisions such as design approval, material architecture/security decisions, product review and production approval. Do not show routine repair noise, PR merge chores, or normal CI retries. Each item should explain why attention is required and provide one clear decision path. Minimal bilingual RTL-ready enterprise UI."
+    },
+    {
+      "key": "activity",
+      "title": "Factory Activity",
+      "deviceType": "DESKTOP",
+      "prompt": "Design the Factory Activity screen. Human-readable timeline of important Factory events: work package assigned, agent started, heartbeat, code evidence, CI verification, retry/fallback, staging ready, human gate. Raw logs hidden behind details. Include filters by project, stage, agent and status. Make auditability strong without overwhelming the Product Owner. Arabic/English RTL-ready."
+    }
+  ],
+  "runLabel": "dashboard-v0.1-initial-design"
+}
