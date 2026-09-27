@@ -10,21 +10,20 @@
 |---|---|
 | Active product | AI Factory Dashboard |
 | Product repository | `alnatourm/AI-FACTORY-DASHBOARD` |
-| Factory work item | `ogroup-ai-factory#135` |
-| Current stage | **BUILDING** via bounded Antigravity slices. Slice 1 `dashboard-shell-home` is the active production slice. |
-| Product Owner design gate | **APPROVED**. Stitch review previously passed 100/100 for 9/9 screens, Arabic/RTL/responsive checks green. |
-| Last verified green point | Slice architecture commits `7d050b38` and `98cb425a` passed Engineering Quality Gate. Railway Watchdog is deployed and cross-repo dispatch is proven. |
-| Active execution | Factory Antigravity Target Build run **36271942362** is in progress on commit `98cb425a`, using `dashboard-shell-home`. Watchdog supervises `factory-work:135`. |
-| Why slicing was required | Full-dashboard Antigravity interaction ended `incomplete` after **544,393 total tokens** with no final output. Credential/API were healthy. Factory now sends bounded source context and one implementation slice at a time. |
-| Current blocker | **NONE requiring Product Owner action.** The active slice must still prove successful provider completion and downstream verification. |
+| Factory work item | `ogroup-ai-factory#135`, reopened after premature legacy completion |
+| Current stage | **VERIFYING SLICE ORCHESTRATION**. Slice 1 `dashboard-shell-home` implementation was generated, repaired, verified, and merged as Dashboard PR #37. Six-slice completion ledger is being hardened before Slice 2 starts. |
+| Product Owner design gate | **APPROVED**. Stitch review passed 100/100 for 9/9 screens with Arabic/RTL/responsive checks green. |
+| Last verified green point | Dashboard Quality Gate `36308918476` passed on lifecycle commit `d3d9815a`. Slice 1 code previously passed typecheck, tests, production build, and merged PR #37. |
+| Active execution | Factory slice-aware Watchdog commits `0e5e13bd` / `9d2dd3a` exposed two lint blockers. Repair commit `4af70cea` removes them and is awaiting independent Engineering Quality Gate proof. |
+| Current blocker | **Machine-only:** prove slice-aware Factory Watchdog green, then record Slice 1 completion ledger. No Product Owner action required. |
 | Build slice plan | 1. `dashboard-shell-home` → 2. `dashboard-create-product` → 3. `dashboard-control-room` → 4. `dashboard-design-review` → 5. `dashboard-agents-health` → 6. `dashboard-attention-activity`. |
-| Next automatic action | Antigravity finishes Slice 1 → Factory publishes machine build result → Watchdog dispatches Dashboard Product Worker → apply files → Dashboard Quality Gate/tests/build → machine PR → eligible green merge → deployment verification → advance to next incomplete slice. |
-| Failure path | If Antigravity returns failed/incomplete, preserve diagnostics on #135, repair/retry the bounded slice, and do not advance. If Dashboard verification fails, Fix/Factory repairs before merge. |
-| Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised. Do not ask Product Owner to perform routine testing, retries, PR merges, or deployment operations. |
+| Next automatic action | Engineering Quality Gate proves `4af70cea` green → Watchdog runtime/deployment uses slice ledger → record/recognize Slice 1 completion → dispatch bounded Antigravity Slice 2 `dashboard-create-product`. |
+| Failure path | Repair any Factory gate/runtime failure before advancing. A slice cannot advance from provider output or merged code alone without independent verification evidence. |
+| Human action required | **NONE** unless a genuine Product Owner decision/human gate is raised. |
 | Secret rule | Antigravity credential stays in Factory. Never request or copy it into Dashboard repo or chat. |
-| Completion rule | A slice is complete only after real implementation is merged, independent checks are green, and required deployment verification succeeds. Provider output alone is not completion. #135 closes only after the required Dashboard implementation is genuinely complete. |
-| Resume command | When returning, inspect: (1) run `36271942362` or its successor, (2) #135 result/diagnostic comments, (3) Dashboard Product Worker, (4) Dashboard Quality Gate/PR/merge, (5) deployment, then update this block and continue automatically. |
-| Last handoff update | 2026-09-26, after sliced Antigravity build dispatch |
+| Completion rule | #135 closes only after all six required slices have completion evidence and required verification/deployment gates are green. One merged slice is never total completion. |
+| Resume command | Inspect latest Factory Engineering Quality Gate, #135 slice comments, Watchdog deployment, Dashboard worker/gate, then continue the first incomplete slice automatically. |
+| Last handoff update | 2026-09-27, after reopening #135 and repairing slice-aware Watchdog lint blockers |
 
 ### Mandatory handoff protocol
 
