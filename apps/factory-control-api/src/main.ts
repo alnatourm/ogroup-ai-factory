@@ -18,7 +18,7 @@ async function github(path:string,init:RequestInit={}){
  const response=await fetch(`https://api.github.com/repos/${repository}${path}`,{...init,headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${githubToken}`,'X-GitHub-Api-Version':'2022-11-28',...(init.headers??{})}});
  if(!response.ok)throw new Error(`GITHUB_${response.status}_${path}`); return response;
 }
-type Issue={number:number;title:string;body?:string|null;updated_at:string;created_at:string;html_url:string;labels?:Array<{name?:string}>};
+type Issue={number:number;title:string;body?:string|null;updated_at:string;created_at:string;html_url:string;labels?:Array<{name?:string}>};\ntype WorkflowRun={id:number;name:string;status:string;conclusion:string|null;updated_at:string;html_url:string;head_sha:string};
 function statusOf(issue:Issue){const labels=new Set((issue.labels??[]).map(x=>x.name));for(const [label,status] of [['factory-status:waiting-human','WAITING_HUMAN'],['factory-status:waiting-dependency','WAITING_DEPENDENCY'],['factory-status:verifying','VERIFYING'],['factory-status:retrying','RETRYING'],['factory-status:running','RUNNING'],['factory-status:completed','COMPLETED'],['factory-status:failed','FAILED'],['factory-status:stalled','STALLED']] as const)if(labels.has(label))return status;return 'QUEUED'}
 function targetOf(body=''){return body.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi)?.[1]??null}
 async function issues(){const r=await github('/issues?state=all&labels=factory-work&per_page=100');return (await r.json() as Issue[]).filter(x=>!('pull_request' in x))}
@@ -35,6 +35,6 @@ app.post('/api/factory/runs/:issue/continue',async(req,res,next)=>{try{const n=N
  await github(`/issues/${n}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:`FACTORY_DASHBOARD_CONTINUE factory-work:${n} ${new Date().toISOString()}`})});
  await github('/dispatches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({event_type:'factory-watchdog-continue',client_payload:{runId:`factory-work:${n}`,source:'dashboard'}})});
  res.json({data:{accepted:true,runId:`factory-work:${n}`},meta:{}})}catch(e){next(e)}});
-app.get('/api/factory/activity',async(_req,res,next)=>{try{const r=await github('/actions/runs?per_page=30');const j=await r.json() as {workflow_runs?:Array<any>};res.json({data:(j.workflow_runs??[]).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url,sha:x.head_sha})),meta:{repository}})}catch(e){next(e)}});
+app.get('/api/factory/activity',async(_req,res,next)=>{try{const r=await github('/actions/runs?per_page=30');const j=await r.json() as {workflow_runs?:WorkflowRun[]};res.json({data:(j.workflow_runs??[]).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url,sha:x.head_sha})),meta:{repository}})}catch(e){next(e)}});
 app.use((e:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{console.error(e instanceof Error?e.message:String(e));res.status(502).json({error:{code:'FACTORY_UPSTREAM_ERROR',message:'Factory control operation failed.'}})});
 const port=Number(process.env.PORT??'3000');app.listen(port,'0.0.0.0',()=>console.log(JSON.stringify({type:'FACTORY_CONTROL_API_STARTED',port,repository})));
