@@ -64,6 +64,8 @@ jobs:
           INDEX=0
           for FILE in /tmp/chunk-*; do
             INDEX=$((INDEX+1))
-            BODY="FACTORY_ANTIGRAVITY_RESULT $RUN_ID $BUILD_ID $INDEX/$TOTAL"$'\n'"$(cat "$FILE")"
+            BODY="FACTORY_ANTIGRAVITY_RESULT $RUN_ID $BUILD_ID $INDEX/$TOTAL"
+\n'"$(cat "$FILE")"
             gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
           done
+          gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "FACTORY_ANTIGRAVITY_READY $RUN_ID $FACTORY_BUILD_SLICE $BUILD_ID"
