@@ -6,6 +6,35 @@ const intervalMs = Number(process.env.WATCHDOG_INTERVAL_MS ?? '60000');
 const recoveryCooldownMs = Number(process.env.WATCHDOG_RECOVERY_COOLDOWN_MS ?? '300000');
 const lastRecoveryAt = new Map<string, number>();
 
+const DASHBOARD_SLICES = [
+  'dashboard-shell-home',
+  'dashboard-create-product',
+  'dashboard-control-room',
+  'dashboard-design-review',
+  'dashboard-agents-health',
+  'dashboard-attention-activity',
+] as const;
+
+interface FactoryComment { body?: string | null; }
+
+async function factoryComments(issueNumber: number): Promise<FactoryComment[]> {
+  const response = await github(`/issues/${issueNumber}/comments?per_page=100`);
+  return await response.json() as FactoryComment[];
+}
+
+function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
+  const done = new Set<string>();
+  for (const comment of comments) {
+    const m = (comment.body ?? '').match(new RegExp(`^FACTORY_SLICE_COMPLETED ${runId.replace(/[.*+?^\${}()|[\\]\\]/g, '\\const lastRecoveryAt = new Map<string, number>();')} (\\S+)`, 'm'));
+    if (m?.[1]) done.add(m[1]);
+  }
+  return done;
+}
+
+function nextDashboardSlice(done: Set<string>): string | null {
+  return DASHBOARD_SLICES.find((slice) => !done.has(slice)) ?? null;
+}
+
 function canRecover(runId: string): boolean {
   const now = Date.now();
   const previous = lastRecoveryAt.get(runId) ?? 0;
@@ -139,10 +168,12 @@ async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   return false;
 }
 
-async function hasAntigravityResult(issueNumber: number, runId: string): Promise<boolean> {
-  const response = await github(`/issues/${issueNumber}/comments?per_page=100`);
-  const comments = await response.json() as Array<{ body?: string | null }>;
-  return comments.some((comment) => (comment.body ?? '').startsWith(`FACTORY_ANTIGRAVITY_RESULT ${runId} `));
+async function hasAntigravityResult(issueNumber: number, runId: string, sliceId: string): Promise<boolean> {
+  const comments = await factoryComments(issueNumber);
+  if (sliceId === DASHBOARD_SLICES[0]) {
+    return comments.some((comment) => (comment.body ?? '').startsWith(`FACTORY_ANTIGRAVITY_RESULT ${runId} `));
+  }
+  return comments.some((comment) => (comment.body ?? '').startsWith(`FACTORY_ANTIGRAVITY_READY ${runId} ${sliceId} `));
 }
 
 async function completeFactoryIssue(issueNumber: number, runId: string, target: string): Promise<void> {
@@ -190,14 +221,17 @@ const recovery: WatchdogRecoveryPort = {
       const issue = await response.json() as FactoryIssue;
       const target = targetRepository(issue);
       if (target !== repository) {
-        if (await hasMergedImplementation(target, runId)) {
+        const comments = await factoryComments(issueNumber);
+        const done = completedSlices(comments, runId);
+        const sliceId = nextDashboardSlice(done);
+        if (!sliceId) {
           await completeFactoryIssue(issueNumber, runId, target);
           return;
         }
-        if (await hasAntigravityResult(issueNumber, runId)) {
-          await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber });
+        if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
+          await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
         } else if (!(await hasActiveAntigravityBuild(runId))) {
-          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target });
+          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
         }
         return;
       }
