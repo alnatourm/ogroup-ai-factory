@@ -1,7 +1,9 @@
 name: Factory Antigravity Target Build
+
 on:
   repository_dispatch:
-    types: [factory-antigravity-build]
+    types:
+      - factory-antigravity-build
 
 permissions:
   contents: read
@@ -64,11 +66,10 @@ jobs:
           INDEX=0
           for FILE in /tmp/chunk-*; do
             INDEX=$((INDEX+1))
-            BODY="FACTORY_ANTIGRAVITY_RESULT $RUN_ID $BUILD_ID $INDEX/$TOTAL"
-            gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
-          done
-          gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "FACTORY_ANTIGRAVITY_READY $RUN_ID $FACTORY_BUILD_SLICE $BUILD_ID"
-\n'"$(cat "$FILE")"
-            gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "$BODY"
+            {
+              printf 'FACTORY_ANTIGRAVITY_RESULT %s %s %s/%s\n' "$RUN_ID" "$BUILD_ID" "$INDEX" "$TOTAL"
+              cat "$FILE"
+            } > /tmp/result-comment.txt
+            gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file /tmp/result-comment.txt
           done
           gh issue comment "$SOURCE_ISSUE" --repo "$GITHUB_REPOSITORY" --body "FACTORY_ANTIGRAVITY_READY $RUN_ID $FACTORY_BUILD_SLICE $BUILD_ID"
