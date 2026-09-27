@@ -111,14 +111,23 @@ const state: WatchdogStatePort = {
   },
 };
 
-function targetRepository(issue: FactoryIssue): string {
+function targetRepository(issue: FactoryIssue): string | null {
   const body = issue.body ?? '';
   const canonical = body.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
   if (canonical?.[1]) return canonical[1];
-  const markdown = body.match(/^#{1,6}\s*Target repository\s*$\s*`?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)`?\s*$/mi);
-  return markdown?.[1] ?? repository;
-}
 
+  const lines = body.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^#{1,6}\s*Target repository\s*$/i.test(lines[index]?.trim() ?? '')) {
+      for (let valueIndex = index + 1; valueIndex < lines.length; valueIndex += 1) {
+        const candidate = (lines[valueIndex] ?? '').trim().replace(/^\x60|\x60$/g, '');
+        if (!candidate) continue;
+        return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(candidate) ? candidate : null;
+      }
+    }
+  }
+  return null;
+}
 async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
   const runs = await response.json() as { workflow_runs?: Array<{ id: number }> };
@@ -185,7 +194,9 @@ const recovery: WatchdogRecoveryPort = {
       const response = await github(`/issues/${issueNumber}`);
       const issue = await response.json() as FactoryIssue;
       const target = targetRepository(issue);
-      if (target !== repository) {
+      if (!target) throw new Error(`FACTORY_TARGET_REPOSITORY_REQUIRED_${issueNumber}`);
+      if (target === repository) throw new Error(`FACTORY_TARGET_REPOSITORY_MUST_DIFFER_FROM_SUPERVISOR_${issueNumber}`);
+      {
         const comments = await factoryComments(issueNumber);
         const done = completedSlices(comments, runId);
         const sliceId = nextDashboardSlice(done);
