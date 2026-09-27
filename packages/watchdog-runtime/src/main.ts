@@ -196,18 +196,22 @@ const recovery: WatchdogRecoveryPort = {
       const target = targetRepository(issue);
       if (!target) throw new Error(`FACTORY_TARGET_REPOSITORY_REQUIRED_${issueNumber}`);
       if (target === repository) throw new Error(`FACTORY_TARGET_REPOSITORY_MUST_DIFFER_FROM_SUPERVISOR_${issueNumber}`);
+      console.log(JSON.stringify({ type: 'WATCHDOG_TARGET_RESOLVED', runId, issueNumber, target, at: new Date().toISOString() }));
       {
         const comments = await factoryComments(issueNumber);
         const done = completedSlices(comments, runId);
         const sliceId = nextDashboardSlice(done);
+        console.log(JSON.stringify({ type: 'WATCHDOG_SLICE_SELECTED', runId, issueNumber, target, completedSlices: [...done], sliceId, at: new Date().toISOString() }));
         if (!sliceId) {
           await completeFactoryIssue(issueNumber, runId, target);
           return;
         }
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
           await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
+          console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: target, eventType: 'factory-work-execute', runId, sliceId, at: new Date().toISOString() }));
         } else if (!(await hasActiveAntigravityBuild(runId))) {
           await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
+          console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-antigravity-build', runId, sliceId, target, at: new Date().toISOString() }));
         }
         return;
       }
