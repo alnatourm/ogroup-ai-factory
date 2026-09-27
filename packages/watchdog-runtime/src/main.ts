@@ -25,12 +25,12 @@ async function factoryComments(issueNumber: number): Promise<FactoryComment[]> {
 function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
   const done = new Set<string>();
   for (const comment of comments) {
-    const m = (comment.body ?? '').match(new RegExp(`^FACTORY_SLICE_COMPLETED ${runId.replace(/[.*+?^\${}()|[\\]\\]/g, '\\const lastRecoveryAt = new Map<string, number>();')} (\\S+)`, 'm'));
-    if (m?.[1]) done.add(m[1]);
+    const firstLine = (comment.body ?? '').split('\n', 1)[0]?.trim() ?? '';
+    const [marker, markerRunId, sliceId] = firstLine.split(/\s+/);
+    if (marker === 'FACTORY_SLICE_COMPLETED' && markerRunId === runId && sliceId) done.add(sliceId);
   }
   return done;
 }
-
 function nextDashboardSlice(done: Set<string>): string | null {
   return DASHBOARD_SLICES.find((slice) => !done.has(slice)) ?? null;
 }
@@ -117,20 +117,6 @@ function targetRepository(issue: FactoryIssue): string {
   if (canonical?.[1]) return canonical[1];
   const markdown = body.match(/^#{1,6}\s*Target repository\s*$\s*`?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)`?\s*$/mi);
   return markdown?.[1] ?? repository;
-}
-
-async function targetGithub(target: string, path: string, init?: RequestInit): Promise<Response> {
-  const response = await fetch(`https://api.github.com/repos/${target}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${token}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(init?.headers ?? {}),
-    },
-  });
-  if (!response.ok) throw new Error(`GITHUB_${response.status}_${target}_${path}`);
-  return response;
 }
 
 async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
