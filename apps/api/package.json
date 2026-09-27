@@ -12,6 +12,10 @@
     "@ogroup/auth": "0.1.0",
     "@ogroup/rate-limit": "0.1.0",
     "@ogroup/web-security": "0.1.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "tsx": "^4.20.0"
+  },
+  "scripts": {
+    "start": "tsx src/control-runtime.ts"
   }
 }
