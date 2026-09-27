@@ -36,6 +36,22 @@ export interface AppDependencies {
   sessionTtlMs: number;
   secureCookies: boolean;
   accountLifecycle?: AccountHttpDependencies;
+  factoryControl?: FactoryControlPort;
+}
+
+export interface FactoryControlSnapshot {
+  runs: unknown[];
+  activity: unknown[];
+  agents: unknown[];
+  health: Record<string, unknown>;
+  attention: unknown[];
+}
+
+export interface FactoryControlPort {
+  snapshot(): Promise<FactoryControlSnapshot>;
+  startRun(input: unknown, principal: AuthenticatedPrincipal): Promise<unknown>;
+  approveGate(runId: string, gate: 'design' | 'production', principal: AuthenticatedPrincipal): Promise<unknown>;
+  requestChanges(runId: string, gate: 'design' | 'production', feedback: string, principal: AuthenticatedPrincipal): Promise<unknown>;
 }
 
 type SessionTokenSource = 'bearer' | 'cookie';
@@ -246,6 +262,50 @@ export function createApp(dependencies: AppDependencies) {
       meta: {},
     });
   });
+
+  if (dependencies.factoryControl) {
+    app.get('/api/v1/factory/snapshot', async (_request, response, next) => {
+      try {
+        const principal = response.locals.principal as AuthenticatedPrincipal;
+        requirePermission(principal, 'admin:access');
+        response.status(200).json({ data: await dependencies.factoryControl!.snapshot(), meta: {} });
+      } catch (error) { next(error); }
+    });
+
+    app.post('/api/v1/factory/runs', async (request, response, next) => {
+      try {
+        const principal = response.locals.principal as AuthenticatedPrincipal;
+        requirePermission(principal, 'admin:access');
+        const run = await dependencies.factoryControl!.startRun(request.body as unknown, principal);
+        response.status(202).json({ data: run, meta: {} });
+      } catch (error) { next(error); }
+    });
+
+    app.post('/api/v1/factory/runs/:runId/gates/:gate/approve', async (request, response, next) => {
+      try {
+        const principal = response.locals.principal as AuthenticatedPrincipal;
+        requirePermission(principal, 'admin:access');
+        const gate = request.params.gate;
+        if (gate !== 'design' && gate !== 'production') {
+          response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Unknown Factory gate.' } }); return;
+        }
+        response.status(200).json({ data: await dependencies.factoryControl!.approveGate(request.params.runId, gate, principal), meta: {} });
+      } catch (error) { next(error); }
+    });
+
+    app.post('/api/v1/factory/runs/:runId/gates/:gate/changes', async (request, response, next) => {
+      try {
+        const principal = response.locals.principal as AuthenticatedPrincipal;
+        requirePermission(principal, 'admin:access');
+        const gate = request.params.gate;
+        const feedback = typeof request.body?.feedback === 'string' ? request.body.feedback.trim() : '';
+        if ((gate !== 'design' && gate !== 'production') || !feedback) {
+          response.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'Valid gate and feedback are required.' } }); return;
+        }
+        response.status(200).json({ data: await dependencies.factoryControl!.requestChanges(request.params.runId, gate, feedback, principal), meta: {} });
+      } catch (error) { next(error); }
+    });
+  }
 
   app.get('/api/v1/admin/ping', (_request, response) => {
     const principal = response.locals.principal as AuthenticatedPrincipal;

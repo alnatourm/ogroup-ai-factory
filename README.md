@@ -177,3 +177,20 @@ When resuming, do not restart the project or redesign the flow. Continue from he
 - Do not claim a fix until verification proves it.
 - Missing capability or credential access must surface as configuration/stalled, never a false PASS.
 - Keep Factory runtime code here and Dashboard product code in the Dashboard repository.
+
+## Dashboard ↔ Factory control API
+
+The Product Owner Dashboard is a separate control-plane application. It must never embed Factory provider credentials or run the autonomous runtime in the browser.
+
+The Factory API now defines an authenticated, tenant-scoped control bridge through the optional `FactoryControlPort`:
+
+- `GET /api/v1/factory/snapshot` — runs, meaningful activity, truthful agent registry, Watchdog/Factory health, and genuine human-attention items.
+- `POST /api/v1/factory/runs` — submit a Product Owner intent to the Factory runtime.
+- `POST /api/v1/factory/runs/:runId/gates/design/approve` — authorize autonomous execution through staging.
+- `POST /api/v1/factory/runs/:runId/gates/design/changes` — return design feedback to the Factory.
+- `POST /api/v1/factory/runs/:runId/gates/production/approve` — authorize the governed production release path.
+- `POST /api/v1/factory/runs/:runId/gates/production/changes` — return product feedback before release.
+
+All control endpoints sit behind the existing session + tenant authentication middleware and require `admin:access`. The API contract is intentionally a port: the deployed Factory runtime must inject the real implementation backed by Orchestrator, Stage Controller, Watchdog, Agent Registry/evidence sources, and release governance. If that implementation is not configured, these routes are not mounted. Missing runtime capability must never be represented by mock success.
+
+**Security boundary:** provider secrets remain in the Factory runtime. The Dashboard receives status/evidence and sends Product Owner commands only.
