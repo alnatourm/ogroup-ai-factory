@@ -55,6 +55,33 @@ Do not ask the Product Owner to perform orchestration that the Factory can safel
 
 ## Factory control plane
 
+- **Dashboard:** Product Owner UI in `alnatourm/AI-FACTORY-DASHBOARD`.
+- **Factory Control API:** private server-side bridge in `apps/factory-control-api`. It exposes governed run discovery/creation, Watchdog continuation, and Factory activity. It authenticates every control request with `FACTORY_CONTROL_TOKEN`.
+- **Orchestrator / Product Run Controller:** owns plans and task emission.
+- **Watchdog:** remains an independent always-on runtime. Closing the Dashboard does not stop execution.
+- **GitHub:** durable Factory work/evidence bus for the current runtime.
+- **Secrets:** `GITHUB_TOKEN` and `FACTORY_CONTROL_TOKEN` remain server-side. They must never be shipped in Dashboard JavaScript.
+
+### Dashboard wiring
+
+The browser calls the Dashboard same-origin `/api/factory/*` route. The Dashboard server proxies that request to the private Factory Control API and adds the server-side control credential. The Control API then reads or mutates the real Factory work records and dispatches Watchdog continuation events.
+
+```text
+Product Owner
+    ↓
+Dashboard React UI
+    ↓ same origin
+Dashboard server /api/factory/*
+    ↓ private network + server credential
+Factory Control API
+    ↓
+GitHub Factory work + Watchdog + Orchestrator/executors
+```
+
+Creating a product from the Dashboard creates a real `factory-work` issue with `Target-Repository`, which the existing Watchdog can discover and advance. No browser-side GitHub or Factory credential is used.
+
+## Factory control plane
+
 - **Dashboard**: human interface and control room
 - **Orchestrator**: decides what should happen next
 - **Agent Registry**: maps Factory jobs to real executors/providers and fallbacks
