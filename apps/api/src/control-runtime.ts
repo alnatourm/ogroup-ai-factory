@@ -73,7 +73,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   let targetRepository=`alnatourm/${repoName}`;
   const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
   if(repoCheck.status===404){
-    const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:false,auto_init:true})});
+    const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:true,auto_init:true})});
     if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
     const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
   } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
