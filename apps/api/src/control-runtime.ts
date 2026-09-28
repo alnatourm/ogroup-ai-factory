@@ -3,7 +3,7 @@ import express from 'express';
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
-const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
+const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';\nconst controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';\nconst authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
@@ -43,6 +43,13 @@ function requireTenant(req:express.Request,res:express.Response):string|null {
 }
 
 app.use((req,res,next)=>{
+ if(authRequired && req.path.startsWith('/api/v1/factory/')){
+  const authorization=req.header('authorization')??''; const [scheme,presented]=authorization.split(' ');
+  if(scheme?.toLowerCase()!=='bearer'||!presented||!controlApiKey||presented!==controlApiKey){
+   res.status(401).json({error:{code:'UNAUTHENTICATED',message:'Authenticated Factory access is required.'}});return;
+  }
+ }
+
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin',allowedOrigin);
     res.setHeader('Access-Control-Allow-Credentials','true');
