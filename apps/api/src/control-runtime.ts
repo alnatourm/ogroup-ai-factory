@@ -70,8 +70,11 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
   const productName=cleanName(intent); const repoName=`factory-${slugify(productName)}`;
-  let targetRepository=`alnatourm/${repoName}`;
+  const supplied=typeof req.body?.targetRepository==='string'?req.body.targetRepository.trim():'';
+  const suppliedMatch=supplied.match(/^(?:https?:\/\/github\.com\/)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i);
+  let targetRepository=suppliedMatch?.[1]||`alnatourm/${repoName}`;
   const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
+  if(repoCheck.status===404 && suppliedMatch){ res.status(400).json({error:{code:'TARGET_REPOSITORY_NOT_FOUND',message:'The supplied GitHub repository was not found or is not accessible.'}}); return; }
   if(repoCheck.status===404){
     const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:false,auto_init:true})});
     if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
