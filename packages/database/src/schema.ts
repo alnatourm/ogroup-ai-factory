@@ -3,6 +3,9 @@ import {
   foreignKey,
   pgTable,
   text,
+  boolean,
+  bigint,
+  integer,
   timestamp,
   uniqueIndex,
   uuid,
@@ -108,5 +111,68 @@ export const auditLogs = pgTable('audit_logs', {
   resourceType: text('resource_type'),
   resourceId: text('resource_id'),
   metadataJson: text('metadata_json'),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const factoryProjects = pgTable('factory_projects', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  intent: text('intent').notNull(),
+  mode: text('mode').notNull(),
+  status: text('status').notNull().default('IDEA'),
+  targetRepository: text('target_repository'),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('factory_projects_tenant_id_unique').on(table.tenantId, table.id)]);
+
+export const factoryProjectBrain = pgTable('factory_project_brain', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').notNull(),
+  section: text('section').notNull(),
+  contentJson: text('content_json').notNull().default('{}'),
+  version: integer('version').notNull().default(1),
+  updatedBy: uuid('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('factory_project_brain_tenant_project_section_unique').on(table.tenantId, table.projectId, table.section)]);
+
+export const factoryAgents = pgTable('factory_agents', {
+  id: uuid('id').primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), kind: text('kind').notNull(), endpointRef: text('endpoint_ref'),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('factory_agents_tenant_name_unique').on(table.tenantId, table.name)]);
+
+export const factoryProviders = pgTable('factory_providers', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(), kind: text('kind').notNull(), credentialRef: text('credential_ref'), baseUrl: text('base_url'),
+  enabled: boolean('enabled').notNull().default(true), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('factory_providers_tenant_name_unique').on(table.tenantId, table.name)]);
+
+export const factoryModels = pgTable('factory_models', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  providerId: uuid('provider_id').notNull().references(() => factoryProviders.id, { onDelete: 'cascade' }),
+  modelKey: text('model_key').notNull(), displayName: text('display_name').notNull(), capabilitiesJson: text('capabilities_json').notNull().default('[]'),
+  enabled: boolean('enabled').notNull().default(true), createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [uniqueIndex('factory_models_tenant_provider_model_unique').on(table.tenantId, table.providerId, table.modelKey)]);
+
+export const factoryRoleAssignments = pgTable('factory_role_assignments', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').references(() => factoryProjects.id, { onDelete: 'cascade' }), roleKey: text('role_key').notNull(),
+  agentId: uuid('agent_id').notNull().references(() => factoryAgents.id, { onDelete: 'restrict' }),
+  modelId: uuid('model_id').references(() => factoryModels.id, { onDelete: 'set null' }),
+  fallbackModelId: uuid('fallback_model_id').references(() => factoryModels.id, { onDelete: 'set null' }),
+  budgetLimitMicros: bigint('budget_limit_micros', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(), updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const factoryUsageEvents = pgTable('factory_usage_events', {
+  id: uuid('id').primaryKey(), tenantId: uuid('tenant_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  projectId: uuid('project_id').references(() => factoryProjects.id, { onDelete: 'set null' }), source: text('source').notNull(),
+  provider: text('provider'), model: text('model'), inputTokens: bigint('input_tokens', { mode: 'number' }).notNull().default(0),
+  outputTokens: bigint('output_tokens', { mode: 'number' }).notNull().default(0), costMicros: bigint('cost_micros', { mode: 'number' }).notNull().default(0),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
 });
