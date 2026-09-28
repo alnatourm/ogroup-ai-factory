@@ -88,6 +88,30 @@ app.put('/api/v1/factory/config',async(req,res)=>{
  factoryConfigs.set(tenant,input); res.json({data:input,meta:{source:'control-runtime'}});
 });
 
+const BRAIN_SECTIONS=['requirements','business_rules','architecture','decisions','approved_designs','tasks','known_issues','testing_evidence','deployment_history'] as const;
+type BrainSection=typeof BRAIN_SECTIONS[number];
+interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
+const projectBrains=new Map<string,Map<string,BrainEntry>>();
+function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
+async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
+ const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
+ const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
+ const issueTenant=issue.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim();
+ return issueTenant===tenant?issue:null;
+}
+
+app.get('/api/v1/factory/runs/:runId/brain',async(req,res,next)=>{
+ try{const tenant=requireTenant(req,res);if(!tenant)return;const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+ const brain=projectBrains.get(brainKey(tenant,req.params.runId));res.json({data:{runId:req.params.runId,sections:BRAIN_SECTIONS.map(section=>brain?.get(section)??{section,content:null,version:0,updatedAt:null})},meta:{source:'control-runtime'}})
+ }catch(e){next(e)}
+});
+app.put('/api/v1/factory/runs/:runId/brain/:section',async(req,res,next)=>{
+ try{const tenant=requireTenant(req,res);if(!tenant)return;const section=req.params.section as BrainSection;if(!BRAIN_SECTIONS.includes(section)){res.status(400).json({error:{code:'INVALID_BRAIN_SECTION'}});return}
+ const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+ const key=brainKey(tenant,req.params.runId);const brain=projectBrains.get(key)??new Map<string,BrainEntry>();const current=brain.get(section);const entry:BrainEntry={section,content:req.body?.content??null,version:(current?.version??0)+1,updatedAt:new Date().toISOString()};brain.set(section,entry);projectBrains.set(key,brain);res.json({data:entry,meta:{}})
+ }catch(e){next(e)}
+});
+
 app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
  try{
