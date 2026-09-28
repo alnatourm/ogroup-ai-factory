@@ -31,6 +31,7 @@ app.use(express.json({limit:'256kb'}));
 app.use((req,res,next)=>{
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin',allowedOrigin);
+    res.setHeader('Access-Control-Allow-Credentials','true');
     res.setHeader('Access-Control-Allow-Headers','content-type,x-tenant-id');
     res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
   }
