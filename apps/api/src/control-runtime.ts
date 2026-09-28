@@ -21,9 +21,15 @@ async function github(path: string, init?: RequestInit): Promise<Response> {
   return response;
 }
 
-interface Issue { number:number; title:string; body?:string|null; updated_at:string; labels?:Array<{name?:string}>; pull_request?:unknown }
+interface Issue { number:number; title:string; body?:string|null; created_at?:string; updated_at:string; html_url?:string; labels?:Array<{name?:string}>; pull_request?:unknown }
+interface Comment { id:number; body?:string|null; created_at:string; user?:{login?:string} }
 interface Run { id:number; name:string; status:string; conclusion:string|null; updated_at:string; html_url:string }
 interface Runs { workflow_runs?:Run[] }
+
+function cleanName(intent:string){ const first=(intent.split(/\n|\.|:/)[0]??'').replace(/^(build|create|make)\s+/i,'').trim(); return first.slice(0,80)||'New Product'; }
+function slugify(name:string){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)||'factory-product'; }
+function targetFromBody(body:string|null|undefined){ return body?.match(/## Target repository\s*\n+`?([^\n`]+)`?/i)?.[1]?.trim()||null; }
+function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??''); return labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace(/-/g,'_').toUpperCase()??'QUEUED'; }
 
 const app=express();
 app.disable('x-powered-by');
@@ -52,7 +58,7 @@ app.get('/api/v1/factory/snapshot',async(_req,res,next)=>{
   const mapped=issues.map(issue=>{
    const labels=(issue.labels??[]).map(x=>x.name??'');
    const status=labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace('-','_').toUpperCase()??'QUEUED';
-   return {id:`factory-work:${issue.number}`,name:issue.title,status,updatedAt:issue.updated_at};
+   return {id:`factory-work:${issue.number}`,name:cleanName(issue.body?.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]||issue.title.replace(/^Factory product:\s*/i,'')),status,targetRepository:targetFromBody(issue.body),updatedAt:issue.updated_at};
   });
   const attention=mapped.filter(x=>x.status==='WAITING_HUMAN');
   res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:{status:'HEALTHY',watchdog:'ACTIVE',source:'github'},attention},meta:{source:'live'}});
@@ -63,11 +69,22 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
-  const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${intent.slice(0,72)}`,body:`## Product intent\n\n${intent}\n\n## Source\nProduct Owner Dashboard`,labels:['factory-work']})});
+  const productName=cleanName(intent); const repoName=`factory-${slugify(productName)}`;
+  let targetRepository=`alnatourm/${repoName}`;
+  const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
+  if(repoCheck.status===404){
+    const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:false,auto_init:true})});
+    if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
+    const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
+  } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
+  const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\nogroup\n\n## Source\nProduct Owner Dashboard`;
+  const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
   const issue=await response.json() as Issue;
-  res.status(202).json({data:{runId:`factory-work:${issue.number}`,status:'QUEUED'},meta:{}});
+  res.status(202).json({data:{runId:`factory-work:${issue.number}`,name:productName,targetRepository,status:'QUEUED'},meta:{}});
  }catch(e){next(e)}
 });
+
+app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
 
 app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)=>{
  try{
