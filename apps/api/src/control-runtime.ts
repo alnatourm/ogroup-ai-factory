@@ -34,6 +34,14 @@ function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??'
 const app=express();
 app.disable('x-powered-by');
 app.use(express.json({limit:'256kb'}));
+function tenantFromRequest(req:express.Request):string|null { return req.header('x-tenant-id')?.trim()||null; }
+function safeTenantSlug(value:string){ return value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,36)||'tenant'; }
+function requireTenant(req:express.Request,res:express.Response):string|null {
+  const tenant=tenantFromRequest(req);
+  if(!tenant){ res.status(401).json({error:{code:'TENANT_REQUIRED',message:'Tenant context is required.'}}); return null; }
+  return tenant;
+}
+
 app.use((req,res,next)=>{
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin',allowedOrigin);
@@ -47,13 +55,14 @@ app.use((req,res,next)=>{
 
 app.get('/health',(_req,res)=>res.json({status:'ok',service:'ogroup-factory-control'}));
 
-app.get('/api/v1/factory/snapshot',async(_req,res,next)=>{
+app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
+ const tenant=requireTenant(req,res); if(!tenant)return;
  try{
   const [issuesResponse,runsResponse]=await Promise.all([
    github('/issues?state=open&labels=factory-work&per_page=100'),
    github('/actions/runs?per_page=30')
   ]);
-  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request);
+  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request && x.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim()===tenant);
   const runs=(await runsResponse.json() as Runs).workflow_runs??[];
   const mapped=issues.map(issue=>{
    const labels=(issue.labels??[]).map(x=>x.name??'');
@@ -67,9 +76,10 @@ app.get('/api/v1/factory/snapshot',async(_req,res,next)=>{
 
 app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
+  const tenant=requireTenant(req,res); if(!tenant)return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
-  const productName=cleanName(intent); const repoName=`factory-${slugify(productName)}`;
+  const productName=cleanName(intent); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName)}`;
   let targetRepository=`alnatourm/${repoName}`;
   const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
   if(repoCheck.status===404){
@@ -77,19 +87,20 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
     if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
     const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
   } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
-  const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\nogroup\n\n## Source\nProduct Owner Dashboard`;
+  const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\n${tenant}\n\n## Source\nProduct Owner Dashboard`;
   const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
   const issue=await response.json() as Issue;
   res.status(202).json({data:{runId:`factory-work:${issue.number}`,name:productName,targetRepository,status:'QUEUED'},meta:{}});
  }catch(e){next(e)}
 });
 
-app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
+app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
 
 app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)=>{
  try{
+  const tenant=requireTenant(req,res); if(!tenant)return;
   const match=req.params.runId.match(/factory-work:(\d+)/); const gate=req.params.gate; const decision=req.params.decision;
-  if(!match||!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}
+  if(!match||!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}\n  const issueResponse=await github(`/issues/${match[1]}`); const issue=await issueResponse.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
   const feedback=typeof req.body?.feedback==='string'?req.body.feedback.trim():'';
   if(decision==='changes'&&!feedback){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Feedback is required.'}});return}
   const body=decision==='approve'?`FACTORY_HUMAN_GATE_APPROVED ${gate}`:`FACTORY_HUMAN_GATE_CHANGES ${gate}\n\n${feedback}`;
