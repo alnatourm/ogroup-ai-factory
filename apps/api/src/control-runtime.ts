@@ -26,7 +26,7 @@ interface Comment { id:number; body?:string|null; created_at:string; user?:{logi
 interface Run { id:number; name:string; status:string; conclusion:string|null; updated_at:string; html_url:string }
 interface Runs { workflow_runs?:Run[] }
 
-function cleanName(intent:string){ const first=intent.split(/\n|\.|:/)[0].replace(/^(build|create|make)\s+/i,'').trim(); return first.slice(0,80)||'New Product'; }
+function cleanName(intent:string){ const first=(intent.split(/\n|\.|:/)[0]??'').replace(/^(build|create|make)\s+/i,'').trim(); return first.slice(0,80)||'New Product'; }
 function slugify(name:string){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)||'factory-product'; }
 function targetFromBody(body:string|null|undefined){ return body?.match(/## Target repository\s*\n+`?([^\n`]+)`?/i)?.[1]?.trim()||null; }
 function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??''); return labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace(/-/g,'_').toUpperCase()??'QUEUED'; }
