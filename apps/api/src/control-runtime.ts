@@ -55,6 +55,39 @@ app.use((req,res,next)=>{
 
 app.get('/health',(_req,res)=>res.json({status:'ok',service:'ogroup-factory-control'}));
 
+interface FactoryConfig {
+ mode:'managed'|'custom';
+ providers:Array<{id:string;name:string;kind:string;credentialRef?:string;baseUrl?:string;enabled:boolean}>;
+ models:Array<{id:string;providerId:string;modelKey:string;displayName:string;capabilities:string[];enabled:boolean}>;
+ agents:Array<{id:string;name:string;kind:'ogroup'|'external'|'custom'|'webhook'|'mcp';endpointRef?:string;enabled:boolean}>;
+ roles:Array<{role:string;agentId:string;modelId?:string;fallbackModelId?:string;budgetLimitMicros?:number}>;
+}
+const factoryConfigs=new Map<string,FactoryConfig>();
+function configFor(tenant:string):FactoryConfig {
+ const existing=factoryConfigs.get(tenant); if(existing)return existing;
+ const initial:FactoryConfig={mode:'managed',providers:[],models:[],agents:[],roles:[]}; factoryConfigs.set(tenant,initial); return initial;
+}
+function configInput(body:unknown):FactoryConfig|null {
+ if(!body||typeof body!=='object')return null; const v=body as Partial<FactoryConfig>;
+ if(v.mode!=='managed'&&v.mode!=='custom')return null;
+ return {mode:v.mode,providers:Array.isArray(v.providers)?v.providers:[],models:Array.isArray(v.models)?v.models:[],agents:Array.isArray(v.agents)?v.agents:[],roles:Array.isArray(v.roles)?v.roles:[]};
+}
+
+app.get('/api/v1/factory/config',async(req,res)=>{
+ const tenant=requireTenant(req,res); if(!tenant)return;
+ res.json({data:configFor(tenant),meta:{source:'control-runtime'}});
+});
+
+app.put('/api/v1/factory/config',async(req,res)=>{
+ const tenant=requireTenant(req,res); if(!tenant)return;
+ const input=configInput(req.body); if(!input){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory configuration.'}});return}
+ const providerIds=new Set(input.providers.map(x=>x.id)); const modelIds=new Set(input.models.map(x=>x.id)); const agentIds=new Set(input.agents.map(x=>x.id));
+ if(input.models.some(x=>!providerIds.has(x.providerId))||input.roles.some(x=>!agentIds.has(x.agentId)||(x.modelId&&!modelIds.has(x.modelId))||(x.fallbackModelId&&!modelIds.has(x.fallbackModelId)))){
+  res.status(400).json({error:{code:'FACTORY_CONFIG_REFERENCE_ERROR',message:'Role, model or provider reference is invalid.'}});return;
+ }
+ factoryConfigs.set(tenant,input); res.json({data:input,meta:{source:'control-runtime'}});
+});
+
 app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
  try{
