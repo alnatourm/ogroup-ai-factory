@@ -1,11 +1,11 @@
 import express from 'express';
 
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
+const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
+const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
-const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
-const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
@@ -28,9 +28,9 @@ interface Comment { id:number; body?:string|null; created_at:string; user?:{logi
 interface Run { id:number; name:string; status:string; conclusion:string|null; updated_at:string; html_url:string }
 interface Runs { workflow_runs?:Run[] }
 
-function cleanName(intent:string){ const first=(intent.split(/\\n|\\.|:/)[0]??'').replace(/^(build|create|make)\\s+/i,'').trim(); return first.slice(0,80)||'New Product'; }
+function cleanName(intent:string){ const first=(intent.split(/\n|\.|:/)[0]??'').replace(/^(build|create|make)\s+/i,'').trim(); return first.slice(0,80)||'New Product'; }
 function slugify(name:string){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,60)||'factory-product'; }
-function targetFromBody(body:string|null|undefined){ return body?.match(/## Target repository\\s*\\n+`?([^\\n`]+)`?/i)?.[1]?.trim()||null; }
+function targetFromBody(body:string|null|undefined){ return body?.match(/## Target repository\s*\n+`?([^\n`]+)`?/i)?.[1]?.trim()||null; }
 function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??''); return labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace(/-/g,'_').toUpperCase()??'QUEUED'; }
 
 const app=express();
@@ -45,13 +45,6 @@ function requireTenant(req:express.Request,res:express.Response):string|null {
 }
 
 app.use((req,res,next)=>{
- if(authRequired && req.path.startsWith('/api/v1/factory/')){
-  const authorization=req.header('authorization')??''; const [scheme,presented]=authorization.split(' ');
-  if(scheme?.toLowerCase()!=='bearer'||!presented||!controlApiKey||presented!==controlApiKey){
-   res.status(401).json({error:{code:'UNAUTHENTICATED',message:'Authenticated Factory access is required.'}});return;
-  }
- }
-
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin',allowedOrigin);
     res.setHeader('Access-Control-Allow-Credentials','true');
@@ -103,9 +96,81 @@ interface BrainEntry { section:BrainSection; content:unknown; version:number; up
 const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
- const match=runId.match(/factory-work:(\\d+)/); if(!match)return null;
- const response=await github(`/issues/${match[1]}`);
- const issue=await response.json() as Issue;
- const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim();
+ const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
+ const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
+ const issueTenant=issue.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim();
  return issueTenant===tenant?issue:null;
 }
+
+app.get('/api/v1/factory/runs/:runId/brain',async(req,res,next)=>{
+ try{const tenant=requireTenant(req,res);if(!tenant)return;const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+ const brain=projectBrains.get(brainKey(tenant,req.params.runId));res.json({data:{runId:req.params.runId,sections:BRAIN_SECTIONS.map(section=>brain?.get(section)??{section,content:null,version:0,updatedAt:null})},meta:{source:'control-runtime'}})
+ }catch(e){next(e)}
+});
+app.put('/api/v1/factory/runs/:runId/brain/:section',async(req,res,next)=>{
+ try{const tenant=requireTenant(req,res);if(!tenant)return;const section=req.params.section as BrainSection;if(!BRAIN_SECTIONS.includes(section)){res.status(400).json({error:{code:'INVALID_BRAIN_SECTION'}});return}
+ const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+ const key=brainKey(tenant,req.params.runId);const brain=projectBrains.get(key)??new Map<string,BrainEntry>();const current=brain.get(section);const entry:BrainEntry={section,content:req.body?.content??null,version:(current?.version??0)+1,updatedAt:new Date().toISOString()};brain.set(section,entry);projectBrains.set(key,brain);res.json({data:entry,meta:{}})
+ }catch(e){next(e)}
+});
+
+app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
+ const tenant=requireTenant(req,res); if(!tenant)return;
+ try{
+  const [issuesResponse,runsResponse]=await Promise.all([
+   github('/issues?state=open&labels=factory-work&per_page=100'),
+   github('/actions/runs?per_page=30')
+  ]);
+  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request && x.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim()===tenant);
+  const runs=(await runsResponse.json() as Runs).workflow_runs??[];
+  const mapped=issues.map(issue=>{
+   const labels=(issue.labels??[]).map(x=>x.name??'');
+   const status=labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace('-','_').toUpperCase()??'QUEUED';
+   return {id:`factory-work:${issue.number}`,name:cleanName(issue.body?.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]||issue.title.replace(/^Factory product:\s*/i,'')),status,targetRepository:targetFromBody(issue.body),updatedAt:issue.updated_at};
+  });
+  const attention=mapped.filter(x=>x.status==='WAITING_HUMAN');
+  res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:{status:'HEALTHY',watchdog:'ACTIVE',source:'github'},attention},meta:{source:'live'}});
+ }catch(e){next(e)}
+});
+
+app.post('/api/v1/factory/runs',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res); if(!tenant)return;
+  const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
+  if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
+  const productName=cleanName(intent); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName)}`;
+  let targetRepository=`alnatourm/${repoName}`;
+  const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
+  if(repoCheck.status===404){
+    const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:true,auto_init:true})});
+    if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
+    const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
+  } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
+  const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\n${tenant}\n\n## Source\nProduct Owner Dashboard`;
+  const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
+  const issue=await response.json() as Issue;
+  res.status(202).json({data:{runId:`factory-work:${issue.number}`,name:productName,targetRepository,status:'QUEUED'},meta:{}});
+ }catch(e){next(e)}
+});
+
+app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
+
+app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res); if(!tenant)return;
+  const match=req.params.runId.match(/factory-work:(\d+)/); const gate=req.params.gate; const decision=req.params.decision;
+  if(!match||!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}
+  const issueResponse=await github(`/issues/${match[1]}`); const issue=await issueResponse.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  const feedback=typeof req.body?.feedback==='string'?req.body.feedback.trim():'';
+  if(decision==='changes'&&!feedback){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Feedback is required.'}});return}
+  const body=decision==='approve'?`FACTORY_HUMAN_GATE_APPROVED ${gate}`:`FACTORY_HUMAN_GATE_CHANGES ${gate}\n\n${feedback}`;
+  await github(`/issues/${match[1]}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+  res.json({data:{runId:req.params.runId,gate,decision,recorded:true},meta:{}});
+ }catch(e){next(e)}
+});
+
+app.use((error:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{
+ console.error(error); res.status(500).json({error:{code:'FACTORY_CONTROL_ERROR',message:'Factory control operation failed.'}});
+});
+
+app.listen(port,'0.0.0.0',()=>console.log(JSON.stringify({type:'FACTORY_CONTROL_READY',port,repository})));
