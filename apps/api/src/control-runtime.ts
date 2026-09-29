@@ -1,7 +1,7 @@
 import express from 'express';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes } from 'node:crypto';
 
 const databaseUrl=process.env.DATABASE_URL?.trim()??'';
 const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
@@ -78,7 +78,6 @@ app.get('/health',async(_req,res)=>{
 const byokMasterKey=process.env.FACTORY_BYOK_MASTER_KEY?.trim()??'';
 function vaultKey(){if(!byokMasterKey)throw new Error('BYOK_VAULT_NOT_CONFIGURED');return createHash('sha256').update(byokMasterKey).digest()}
 function encryptSecret(secret:string){const iv=randomBytes(12);const cipher=createCipheriv('aes-256-gcm',vaultKey(),iv);const encrypted=Buffer.concat([cipher.update(secret,'utf8'),cipher.final()]);const tag=cipher.getAuthTag();return {ciphertext:encrypted.toString('base64'),iv:iv.toString('base64'),tag:tag.toString('base64')}}
-function decryptSecret(row:{ciphertext:unknown;iv:unknown;tag:unknown}){const decipher=createDecipheriv('aes-256-gcm',vaultKey(),Buffer.from(String(row.iv),'base64'));decipher.setAuthTag(Buffer.from(String(row.tag),'base64'));return Buffer.concat([decipher.update(Buffer.from(String(row.ciphertext),'base64')),decipher.final()]).toString('utf8')}
 async function ensureVaultTable(){if(!sql)return;await sql`create table if not exists factory_byok_vault (tenant_id text not null, credential_ref text not null, provider text not null, ciphertext text not null, iv text not null, tag text not null, updated_at timestamptz not null default now(), primary key(tenant_id,credential_ref))`}
 app.put('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const credentialRef=req.params.credentialRef.trim();const provider=typeof req.body?.provider==='string'?req.body.provider.trim():'';const secret=typeof req.body?.secret==='string'?req.body.secret.trim():'';if(!credentialRef||!provider||secret.length<8){res.status(400).json({error:{code:'INVALID_BYOK_CREDENTIAL'}});return}await ensureVaultTable();const enc=encryptSecret(secret);await sql`insert into factory_byok_vault(tenant_id,credential_ref,provider,ciphertext,iv,tag,updated_at) values(${tenant},${credentialRef},${provider},${enc.ciphertext},${enc.iv},${enc.tag},now()) on conflict(tenant_id,credential_ref) do update set provider=excluded.provider,ciphertext=excluded.ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=now()`;res.json({data:{credentialRef,provider,configured:true},meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
 app.get('/api/v1/factory/byok',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}await ensureVaultTable();const rows=await sql`select credential_ref,provider,updated_at from factory_byok_vault where tenant_id=${tenant} order by updated_at desc`;res.json({data:rows.map(r=>({credentialRef:String(r.credential_ref),provider:String(r.provider),configured:true,updatedAt:new Date(r.updated_at as string).toISOString()})),meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
