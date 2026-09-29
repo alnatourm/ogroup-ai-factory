@@ -71,3 +71,36 @@ export function isFactoryMode(value: unknown): value is FactoryMode {
 export function isFactoryRole(value: unknown): value is FactoryRole {
   return typeof value === 'string' && (FACTORY_ROLES as readonly string[]).includes(value);
 }
+
+export type UsageSource = 'ogroup' | 'customer';
+
+export interface FactoryUsageEvent {
+  tenantId: string;
+  projectId?: string;
+  source: UsageSource;
+  provider?: string;
+  model?: string;
+  inputTokens: number;
+  outputTokens: number;
+  costMicros: number;
+  occurredAt: string;
+}
+
+export interface UsageSummary {
+  inputTokens: number;
+  outputTokens: number;
+  costMicros: number;
+  events: number;
+  bySource: Record<UsageSource,{inputTokens:number;outputTokens:number;costMicros:number;events:number}>;
+}
+
+export function summarizeUsage(events: readonly FactoryUsageEvent[]): UsageSummary {
+  const blank=()=>({inputTokens:0,outputTokens:0,costMicros:0,events:0});
+  const result:UsageSummary={...blank(),bySource:{ogroup:blank(),customer:blank()}};
+  for(const event of events){
+    if(event.inputTokens<0||event.outputTokens<0||event.costMicros<0) throw new Error('INVALID_USAGE_EVENT');
+    result.inputTokens+=event.inputTokens; result.outputTokens+=event.outputTokens; result.costMicros+=event.costMicros; result.events+=1;
+    const bucket=result.bySource[event.source]; bucket.inputTokens+=event.inputTokens; bucket.outputTokens+=event.outputTokens; bucket.costMicros+=event.costMicros; bucket.events+=1;
+  }
+  return result;
+}
