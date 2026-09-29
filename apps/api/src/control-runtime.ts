@@ -1,6 +1,8 @@
 import express from 'express';
 
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
+const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
+const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
@@ -50,6 +52,13 @@ app.use((req,res,next)=>{
     res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
   }
   if(req.method==='OPTIONS'){res.status(204).send();return}
+  next();
+});
+
+app.use('/api/v1/factory',(req,res,next)=>{
+  if(!authRequired){next();return}
+  if(!controlApiKey){res.status(503).json({error:{code:'FACTORY_AUTH_NOT_CONFIGURED',message:'Factory authentication is required but no server credential is configured.'}});return}
+  if((req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
   next();
 });
 
