@@ -129,6 +129,51 @@ app.put('/api/v1/factory/config',async(req,res)=>{
  const source=await persistConfig(tenant,input); res.json({data:input,meta:{source}});
 });
 
+type UsageSource='ogroup'|'customer';
+interface RuntimeUsageEvent { projectId?:string; source:UsageSource; provider?:string; model?:string; inputTokens:number; outputTokens:number; costMicros:number; occurredAt:string }
+async function ensureUsageTable(){
+ if(!sql)return;
+ await sql`create table if not exists factory_runtime_usage (
+  id bigserial primary key,
+  tenant_id text not null,
+  project_id text,
+  source text not null check (source in ('ogroup','customer')),
+  provider text,
+  model text,
+  input_tokens integer not null default 0 check (input_tokens >= 0),
+  output_tokens integer not null default 0 check (output_tokens >= 0),
+  cost_micros bigint not null default 0 check (cost_micros >= 0),
+  occurred_at timestamptz not null default now()
+ )`;
+ await sql`create index if not exists factory_runtime_usage_tenant_time on factory_runtime_usage (tenant_id,occurred_at desc)`;
+}
+app.get('/api/v1/factory/usage',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res);if(!tenant)return;
+  if(!sql){res.status(503).json({error:{code:'USAGE_DATABASE_REQUIRED',message:'Usage persistence requires PostgreSQL.'}});return}
+  await ensureUsageTable();
+  const rows=await sql`select source,count(*)::int as events,coalesce(sum(input_tokens),0)::bigint as input_tokens,coalesce(sum(output_tokens),0)::bigint as output_tokens,coalesce(sum(cost_micros),0)::bigint as cost_micros from factory_runtime_usage where tenant_id=${tenant} group by source`;
+  const empty=()=>({events:0,inputTokens:0,outputTokens:0,costMicros:0});
+  const bySource:{ogroup:ReturnType<typeof empty>;customer:ReturnType<typeof empty>}={ogroup:empty(),customer:empty()};
+  for(const row of rows){const source=row.source as UsageSource;bySource[source]={events:Number(row.events),inputTokens:Number(row.input_tokens),outputTokens:Number(row.output_tokens),costMicros:Number(row.cost_micros)}}
+  const total={events:bySource.ogroup.events+bySource.customer.events,inputTokens:bySource.ogroup.inputTokens+bySource.customer.inputTokens,outputTokens:bySource.ogroup.outputTokens+bySource.customer.outputTokens,costMicros:bySource.ogroup.costMicros+bySource.customer.costMicros};
+  res.json({data:{total,bySource},meta:{source:'postgres'}});
+ }catch(e){next(e)}
+});
+app.post('/api/v1/factory/usage',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res);if(!tenant)return;
+  if(!sql){res.status(503).json({error:{code:'USAGE_DATABASE_REQUIRED'}});return}
+  const body=req.body as Partial<RuntimeUsageEvent>; const source=body.source;
+  const inputTokens=Number(body.inputTokens??0),outputTokens=Number(body.outputTokens??0),costMicros=Number(body.costMicros??0);
+  if((source!=='ogroup'&&source!=='customer')||![inputTokens,outputTokens,costMicros].every(Number.isFinite)||[inputTokens,outputTokens,costMicros].some(x=>x<0)){res.status(400).json({error:{code:'INVALID_USAGE_EVENT'}});return}
+  await ensureUsageTable();
+  const occurredAt=body.occurredAt?new Date(body.occurredAt):new Date(); if(Number.isNaN(occurredAt.getTime())){res.status(400).json({error:{code:'INVALID_USAGE_TIME'}});return}
+  await sql`insert into factory_runtime_usage (tenant_id,project_id,source,provider,model,input_tokens,output_tokens,cost_micros,occurred_at) values (${tenant},${body.projectId??null},${source},${body.provider??null},${body.model??null},${inputTokens},${outputTokens},${costMicros},${occurredAt})`;
+  res.status(201).json({data:{recorded:true},meta:{source:'postgres'}});
+ }catch(e){next(e)}
+});
+
 const BRAIN_SECTIONS=['requirements','business_rules','architecture','decisions','approved_designs','tasks','known_issues','testing_evidence','deployment_history'] as const;
 type BrainSection=typeof BRAIN_SECTIONS[number];
 interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
