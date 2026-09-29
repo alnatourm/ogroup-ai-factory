@@ -86,6 +86,28 @@ function configFor(tenant:string):FactoryConfig {
  const existing=factoryConfigs.get(tenant); if(existing)return existing;
  const initial:FactoryConfig={mode:'managed',providers:[],models:[],agents:[],roles:[]}; factoryConfigs.set(tenant,initial); return initial;
 }
+async function ensureConfigTable(){
+ if(!sql)return;
+ await sql`create table if not exists factory_runtime_config (
+  tenant_id text primary key,
+  config_json text not null,
+  updated_at timestamptz not null default now()
+ )`;
+}
+async function loadConfig(tenant:string):Promise<FactoryConfig>{
+ if(!sql)return configFor(tenant);
+ await ensureConfigTable();
+ const rows=await sql`select config_json from factory_runtime_config where tenant_id=${tenant}`;
+ if(!rows[0])return {mode:'managed',providers:[],models:[],agents:[],roles:[]};
+ return JSON.parse(String(rows[0].config_json)) as FactoryConfig;
+}
+async function persistConfig(tenant:string,input:FactoryConfig){
+ if(!sql){factoryConfigs.set(tenant,input);return 'memory-fallback'}
+ await ensureConfigTable(); const payload=JSON.stringify(input);
+ await sql`insert into factory_runtime_config (tenant_id,config_json,updated_at) values (${tenant},${payload},now())
+ on conflict (tenant_id) do update set config_json=excluded.config_json,updated_at=now()`;
+ return 'postgres';
+}
 function configInput(body:unknown):FactoryConfig|null {
  if(!body||typeof body!=='object')return null; const v=body as Partial<FactoryConfig>;
  if(v.mode!=='managed'&&v.mode!=='custom')return null;
@@ -94,7 +116,7 @@ function configInput(body:unknown):FactoryConfig|null {
 
 app.get('/api/v1/factory/config',async(req,res)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
- res.json({data:configFor(tenant),meta:{source:'control-runtime'}});
+ res.json({data:await loadConfig(tenant),meta:{source:sql?'postgres':'memory-fallback'}});
 });
 
 app.put('/api/v1/factory/config',async(req,res)=>{
@@ -104,7 +126,7 @@ app.put('/api/v1/factory/config',async(req,res)=>{
  if(input.models.some(x=>!providerIds.has(x.providerId))||input.roles.some(x=>!agentIds.has(x.agentId)||(x.modelId&&!modelIds.has(x.modelId))||(x.fallbackModelId&&!modelIds.has(x.fallbackModelId)))){
   res.status(400).json({error:{code:'FACTORY_CONFIG_REFERENCE_ERROR',message:'Role, model or provider reference is invalid.'}});return;
  }
- factoryConfigs.set(tenant,input); res.json({data:input,meta:{source:'control-runtime'}});
+ const source=await persistConfig(tenant,input); res.json({data:input,meta:{source}});
 });
 
 const BRAIN_SECTIONS=['requirements','business_rules','architecture','decisions','approved_designs','tasks','known_issues','testing_evidence','deployment_history'] as const;
