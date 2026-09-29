@@ -104,5 +104,8 @@ const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
  const match=runId.match(/factory-work:(\\d+)/); if(!match)return null;
- const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
- const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; const intent=issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||''; res.json({data:{id:req.params.runId,name:cleanName(intent||issue.title),intent,targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
+ const response=await github(`/issues/${match[1]}`);
+ const issue=await response.json() as Issue;
+ const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim();
+ return issueTenant===tenant?issue:null;
+}
