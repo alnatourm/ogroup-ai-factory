@@ -1,4 +1,10 @@
 import express from 'express';
+import postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+
+const databaseUrl=process.env.DATABASE_URL?.trim()??'';
+const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
+const db=sql?drizzle(sql):null;
 
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
 const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
@@ -62,7 +68,11 @@ app.use('/api/v1/factory',(req,res,next)=>{
   next();
 });
 
-app.get('/health',(_req,res)=>res.json({status:'ok',service:'ogroup-factory-control'}));
+app.get('/health',async(_req,res)=>{
+ if(!db||!sql){res.json({status:'ok',service:'ogroup-factory-control',database:'not-configured'});return}
+ try{await sql`select 1`;res.json({status:'ok',service:'ogroup-factory-control',database:'connected'})}
+ catch{res.status(503).json({status:'degraded',service:'ogroup-factory-control',database:'unavailable'})}
+});
 
 interface FactoryConfig {
  mode:'managed'|'custom';
