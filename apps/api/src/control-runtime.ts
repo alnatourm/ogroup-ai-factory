@@ -140,7 +140,7 @@ async function persistBrain(tenant:string,runId:string,section:BrainSection,cont
  values (${tenant},${runId},${section},${payload},1,now())
  on conflict (tenant_id,run_id,section) do update set content_json=excluded.content_json,version=factory_runtime_brain.version+1,updated_at=now()
  returning section,content_json,version,updated_at`;
- const row=rows[0]; return {section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()} satisfies BrainEntry;
+ const row=rows[0]; if(!row) throw new Error('PROJECT_BRAIN_UPSERT_FAILED'); return {section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()} satisfies BrainEntry;
 }
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
  const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
