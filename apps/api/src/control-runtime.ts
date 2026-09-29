@@ -103,11 +103,9 @@ interface BrainEntry { section:BrainSection; content:unknown; version:number; up
 const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
- const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
+ const match=runId.match(/factory-work:(\\d+)/); if(!match)return null;
  const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
- const issueTenant=issue.body?.match(/## Product owner tenant\s*
-+([^
-]+)/i)?.[1]?.trim();
+ const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim();
  return issueTenant===tenant?issue:null;
 }
 
