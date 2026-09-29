@@ -134,6 +134,36 @@ type BrainSection=typeof BRAIN_SECTIONS[number];
 interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
 const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
+async function ensureBrainTable(){
+ if(!sql)return;
+ await sql`create table if not exists factory_runtime_brain (
+  tenant_id text not null,
+  run_id text not null,
+  section text not null,
+  content_json text not null default 'null',
+  version integer not null default 1,
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, run_id, section)
+ )`;
+}
+async function loadBrain(tenant:string,runId:string){
+ if(!sql)return projectBrains.get(brainKey(tenant,runId));
+ await ensureBrainTable();
+ const rows=await sql`select section,content_json,version,updated_at from factory_runtime_brain where tenant_id=${tenant} and run_id=${runId}`;
+ const brain=new Map<string,BrainEntry>();
+ for(const row of rows) brain.set(String(row.section),{section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()});
+ return brain;
+}
+async function persistBrain(tenant:string,runId:string,section:BrainSection,content:unknown){
+ if(!sql)return null;
+ await ensureBrainTable();
+ const payload=JSON.stringify(content??null);
+ const rows=await sql`insert into factory_runtime_brain (tenant_id,run_id,section,content_json,version,updated_at)
+ values (${tenant},${runId},${section},${payload},1,now())
+ on conflict (tenant_id,run_id,section) do update set content_json=excluded.content_json,version=factory_runtime_brain.version+1,updated_at=now()
+ returning section,content_json,version,updated_at`;
+ const row=rows[0]; if(!row) throw new Error('PROJECT_BRAIN_UPSERT_FAILED'); return {section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()} satisfies BrainEntry;
+}
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
  const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
  const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
@@ -143,13 +173,13 @@ async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
 
 app.get('/api/v1/factory/runs/:runId/brain',async(req,res,next)=>{
  try{const tenant=requireTenant(req,res);if(!tenant)return;const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
- const brain=projectBrains.get(brainKey(tenant,req.params.runId));res.json({data:{runId:req.params.runId,sections:BRAIN_SECTIONS.map(section=>brain?.get(section)??{section,content:null,version:0,updatedAt:null})},meta:{source:'control-runtime'}})
+ const brain=await loadBrain(tenant,req.params.runId);res.json({data:{runId:req.params.runId,sections:BRAIN_SECTIONS.map(section=>brain?.get(section)??{section,content:null,version:0,updatedAt:null})},meta:{source:'control-runtime'}})
  }catch(e){next(e)}
 });
 app.put('/api/v1/factory/runs/:runId/brain/:section',async(req,res,next)=>{
  try{const tenant=requireTenant(req,res);if(!tenant)return;const section=req.params.section as BrainSection;if(!BRAIN_SECTIONS.includes(section)){res.status(400).json({error:{code:'INVALID_BRAIN_SECTION'}});return}
  const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
- const key=brainKey(tenant,req.params.runId);const brain=projectBrains.get(key)??new Map<string,BrainEntry>();const current=brain.get(section);const entry:BrainEntry={section,content:req.body?.content??null,version:(current?.version??0)+1,updatedAt:new Date().toISOString()};brain.set(section,entry);projectBrains.set(key,brain);res.json({data:entry,meta:{}})
+ const persisted=await persistBrain(tenant,req.params.runId,section,req.body?.content??null);if(persisted){res.json({data:persisted,meta:{source:'postgres'}});return} const key=brainKey(tenant,req.params.runId);const brain=projectBrains.get(key)??new Map<string,BrainEntry>();const current=brain.get(section);const entry:BrainEntry={section,content:req.body?.content??null,version:(current?.version??0)+1,updatedAt:new Date().toISOString()};brain.set(section,entry);projectBrains.set(key,brain);res.json({data:entry,meta:{source:'memory-fallback'}})
  }catch(e){next(e)}
 });
 
