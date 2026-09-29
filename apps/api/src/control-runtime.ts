@@ -128,9 +128,7 @@ app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
    github('/issues?state=open&labels=factory-work&per_page=100'),
    github('/actions/runs?per_page=30')
   ]);
-  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request && x.body?.match(/## Product owner tenant\s*
-+([^
-]+)/i)?.[1]?.trim()===tenant);
+  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request && x.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim()===tenant);
   const runs=(await runsResponse.json() as Runs).workflow_runs??[];
   const mapped=issues.map(issue=>{
    const labels=(issue.labels??[]).map(x=>x.name??'');
