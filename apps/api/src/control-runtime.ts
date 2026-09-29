@@ -55,6 +55,13 @@ app.use((req,res,next)=>{
   next();
 });
 
+app.use('/api/v1/factory',(req,res,next)=>{
+  if(!authRequired){next();return}
+  if(!controlApiKey){res.status(503).json({error:{code:'FACTORY_AUTH_NOT_CONFIGURED',message:'Factory authentication is required but no server credential is configured.'}});return}
+  if((req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
+  next();
+});
+
 app.get('/health',(_req,res)=>res.json({status:'ok',service:'ogroup-factory-control'}));
 
 interface FactoryConfig {
