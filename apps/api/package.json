@@ -13,7 +13,10 @@
     "@ogroup/rate-limit": "0.1.0",
     "@ogroup/web-security": "0.1.0",
     "express": "^5.1.0",
-    "tsx": "^4.20.0"
+    "tsx": "^4.20.0",
+    "@ogroup/database": "0.2.0",
+    "postgres": "^3.4.7",
+    "drizzle-orm": "^0.44.0"
   },
   "scripts": {
     "start": "tsx src/control-runtime.ts"
