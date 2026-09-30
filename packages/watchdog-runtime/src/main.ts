@@ -38,6 +38,16 @@ function nextDashboardSlice(done: Set<string>): string | null {
   return DASHBOARD_SLICES.find((slice) => !done.has(slice)) ?? null;
 }
 
+function productIntent(issue: FactoryIssue): string {
+  const body=issue.body??'';
+  const match=body.match(/(?:^|\n)Product intent:\s*(.+)/i);
+  return match?.[1]?.trim()??'';
+}
+
+function isDashboardTarget(target: string): boolean {
+  return target.toLowerCase()==='alnatourm/ai-factory-dashboard';
+}
+
 function canRecover(runId: string): boolean {
   const now = Date.now();
   const previous = lastRecoveryAt.get(runId) ?? 0;
@@ -209,7 +219,7 @@ const recovery: WatchdogRecoveryPort = {
       {
         const comments = await factoryComments(issueNumber);
         const done = completedSlices(comments, runId);
-        const sliceId = nextDashboardSlice(done);
+        const sliceId = isDashboardTarget(target) ? nextDashboardSlice(done) : (done.has('customer-product') ? null : 'customer-product');
         console.log(JSON.stringify({ type: 'WATCHDOG_SLICE_SELECTED', runId, issueNumber, target, completedSlices: [...done], sliceId, at: new Date().toISOString() }));
         if (!sliceId) {
           await completeFactoryIssue(issueNumber, runId, target);
@@ -221,7 +231,7 @@ const recovery: WatchdogRecoveryPort = {
           console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: target, eventType: 'factory-work-execute', runId, sliceId, at: new Date().toISOString() }));
         } else if (!(await hasActiveAntigravityBuild(runId))) {
           await setFactoryStatus(issueNumber, 'waiting-dependency');
-          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
+          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, productIntent: productIntent(issue) });
           console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-antigravity-build', runId, sliceId, target, at: new Date().toISOString() }));
         }
         return;
