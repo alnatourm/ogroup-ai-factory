@@ -1,0 +1,60 @@
+name: Factory Customer Product Delivery
+
+on:
+  repository_dispatch:
+    types:
+      - factory-customer-deliver
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
+      TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
+      SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
+      RUN_ID: ${{ github.event.client_payload.runId }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require delivery context
+        run: |
+          test -n "$GH_TOKEN"
+          test -n "$TARGET_REPOSITORY"
+          test -n "$SOURCE_ISSUE"
+          test -n "$RUN_ID"
+      - name: Clone customer repository
+        run: gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
+      - name: Apply generated product payload
+        run: node scripts/apply-customer-build-result.mjs /tmp/customer-product
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+      - name: Verify customer product
+        working-directory: /tmp/customer-product
+        run: |
+          if [ -f package.json ]; then
+            npm install
+            npm run lint --if-present
+            npm run typecheck --if-present
+            npm test --if-present
+            npm run build --if-present
+          fi
+      - name: Commit verified product
+        working-directory: /tmp/customer-product
+        run: |
+          git config user.name "OGroup AI Factory"
+          git config user.email "factory@ogroup.ai"
+          git add -A
+          git diff --cached --quiet && { echo "No implementation change"; exit 1; }
+          git commit -m "build: verified customer product $RUN_ID"
+          git push origin HEAD:main
+      - name: Record verified completion
+        run: |
+          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_SLICE_COMPLETED $RUN_ID customer-product
+          Verified customer product was applied, tested and pushed to $TARGET_REPOSITORY."
