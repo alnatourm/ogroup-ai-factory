@@ -39,8 +39,18 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
 function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
   return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim() === `FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
 }
-function hasDeploymentProof(comments: FactoryComment[], runId: string): boolean {
-  return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim().startsWith(`FACTORY_DEPLOYMENT_VERIFIED ${runId}`));
+async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment): Promise<void> {
+  if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
+  const lines=(comment.body ?? '').split('\n').map((line)=>line.trim());
+  const field=(name:string)=>lines.find((line)=>line.toLowerCase().startsWith(name.toLowerCase()+':'))?.slice(name.length+1).trim() ?? '';
+  const commit=field('Commit'); const provider=field('Provider'); const url=field('URL');
+  if(!commit||!provider||!url) throw new Error('FACTORY_DEPLOYMENT_PROOF_INCOMPLETE');
+  const response=await fetch(`${controlApiUrl.replace(/\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}/evidence`,{
+    method:'POST',
+    headers:{'content-type':'application/json','x-factory-control-key':controlApiKey},
+    body:JSON.stringify({tenant,kind:'deployment',evidence:{status:'verified',repository:target,commit,provider,url}})
+  });
+  if(!response.ok) throw new Error(`FACTORY_DEPLOYMENT_EVIDENCE_HTTP_${response.status}`);
 }
 
 function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
@@ -245,10 +255,14 @@ const recovery: WatchdogRecoveryPort = {
         const sliceId = isDashboardTarget(target) ? nextDashboardSlice(done) : (done.has('customer-product') ? null : 'customer-product');
         console.log(JSON.stringify({ type: 'WATCHDOG_SLICE_SELECTED', runId, issueNumber, target, completedSlices: [...done], sliceId, at: new Date().toISOString() }));
         if (!sliceId) {
-          if (!isDashboardTarget(target) && !hasDeploymentProof(comments, runId)) {
-            await setFactoryStatus(issueNumber, hasDeploymentRequest(comments, runId) ? 'waiting-dependency' : 'verifying');
-            console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: hasDeploymentRequest(comments, runId), at: new Date().toISOString() }));
-            return;
+          if (!isDashboardTarget(target)) {
+            const proof=comments.find((comment)=> (comment.body ?? '').split('\n',1)[0]?.trim().startsWith(`FACTORY_DEPLOYMENT_VERIFIED ${runId}`));
+            if (!proof) {
+              await setFactoryStatus(issueNumber, hasDeploymentRequest(comments, runId) ? 'waiting-dependency' : 'verifying');
+              console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: hasDeploymentRequest(comments, runId), at: new Date().toISOString() }));
+              return;
+            }
+            await persistDeploymentProof(runId, tenantFromIssue(issue), target, proof);
           }
           await completeFactoryIssue(issueNumber, runId, target);
           return;
