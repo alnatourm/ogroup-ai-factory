@@ -36,6 +36,13 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
   return { state, failures };
 }
 
+function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
+  return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim() === `FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
+}
+function hasDeploymentProof(comments: FactoryComment[], runId: string): boolean {
+  return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim().startsWith(`FACTORY_DEPLOYMENT_VERIFIED ${runId}`));
+}
+
 function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
   const done = new Set<string>();
   for (const comment of comments) {
@@ -238,6 +245,11 @@ const recovery: WatchdogRecoveryPort = {
         const sliceId = isDashboardTarget(target) ? nextDashboardSlice(done) : (done.has('customer-product') ? null : 'customer-product');
         console.log(JSON.stringify({ type: 'WATCHDOG_SLICE_SELECTED', runId, issueNumber, target, completedSlices: [...done], sliceId, at: new Date().toISOString() }));
         if (!sliceId) {
+          if (!isDashboardTarget(target) && !hasDeploymentProof(comments, runId)) {
+            await setFactoryStatus(issueNumber, hasDeploymentRequest(comments, runId) ? 'waiting-dependency' : 'verifying');
+            console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: hasDeploymentRequest(comments, runId), at: new Date().toISOString() }));
+            return;
+          }
           await completeFactoryIssue(issueNumber, runId, target);
           return;
         }
