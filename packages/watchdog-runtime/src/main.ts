@@ -138,7 +138,12 @@ function targetRepository(issue: FactoryIssue): string | null {
   }
   return null;
 }
-function tenantFromIssue(issue: FactoryIssue): string {\n  const match=(issue.body??'').match(/^Tenant:\\s*(\\S+)\\s*$/mi);\n  if(!match?.[1]) throw new Error('FACTORY_TENANT_REQUIRED');\n  return match[1];\n}\nasync function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
+function tenantFromIssue(issue: FactoryIssue): string {
+  const match = (issue.body ?? '').match(/^Tenant:\s*(\S+)\s*$/mi);
+  if (!match?.[1]) throw new Error('FACTORY_TENANT_REQUIRED');
+  return match[1];
+}
+async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
   const runs = await response.json() as { workflow_runs?: Array<{ id: number }> };
   for (const run of runs.workflow_runs ?? []) {
