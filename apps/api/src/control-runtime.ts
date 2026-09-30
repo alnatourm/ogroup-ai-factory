@@ -44,7 +44,8 @@ function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??'
 const app=express();
 app.disable('x-powered-by');
 app.use(express.json({limit:'256kb'}));
-function tenantFromRequest(req:express.Request):string|null { return req.header('x-tenant-id')?.trim()||null; }
+function tenantFromRequest(req:express.Request):string|null { return (resTenant.get(req)??null); }
+const resTenant=new WeakMap<express.Request,string>();
 function safeTenantSlug(value:string){ return value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,36)||'tenant'; }
 function requireTenant(req:express.Request,res:express.Response):string|null {
   const tenant=tenantFromRequest(req);
@@ -63,11 +64,20 @@ app.use((req,res,next)=>{
   next();
 });
 
-app.use('/api/v1/factory',(req,res,next)=>{
-  if(!authRequired){next();return}
-  if(!controlApiKey){res.status(503).json({error:{code:'FACTORY_AUTH_NOT_CONFIGURED',message:'Factory authentication is required but no server credential is configured.'}});return}
-  if((req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
-  next();
+app.use('/api/v1/factory',async(req,res,next)=>{
+  try{
+   if(!authRequired){const legacy=req.header('x-tenant-id')?.trim();if(legacy)resTenant.set(req,legacy);next();return}
+   if(!sql){res.status(503).json({error:{code:'FACTORY_AUTH_DATABASE_REQUIRED'}});return}
+   const header=req.header('authorization')??''; const bearer=header.startsWith('Bearer ')?header.slice(7).trim():'';
+   if(!bearer){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
+   if(controlApiKey&&bearer===controlApiKey){const tenant=req.header('x-tenant-id')?.trim();if(!tenant){res.status(401).json({error:{code:'TENANT_REQUIRED'}});return}resTenant.set(req,tenant);next();return}
+   const tokenHash=createHash('sha256').update(bearer).digest('hex');
+   const sessions=await sql`select user_id from sessions where token_hash=${tokenHash} and revoked_at is null and expires_at>now() limit 1`;
+   if(!sessions[0]){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+   const memberships=await sql`select tenant_id from memberships where user_id=${sessions[0].user_id} order by created_at asc,id asc limit 1`;
+   if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+   resTenant.set(req,String(memberships[0].tenant_id)); next();
+  }catch(e){next(e)}
 });
 
 app.get('/health',async(_req,res)=>{
