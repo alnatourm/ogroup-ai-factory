@@ -29,8 +29,12 @@ jobs:
       - name: Require Factory-owned Antigravity credential
         run: test -n "$ANTIGRAVITY_API_KEY"
 
-      - name: Checkout public target source
-        run: git clone --depth 1 "https://github.com/$TARGET_REPOSITORY.git" /tmp/factory-target
+      - name: Checkout customer target source
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
+        run: |
+          test -n "$GH_TOKEN"
+          gh repo clone "$TARGET_REPOSITORY" /tmp/factory-target -- --depth 1
 
       - name: Run governed Antigravity build
         id: antigravity
