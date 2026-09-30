@@ -349,7 +349,11 @@ app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)
   if(decision==='changes'&&!feedback){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Feedback is required.'}});return}
   const body=decision==='approve'?`FACTORY_HUMAN_GATE_APPROVED ${gate}`:`FACTORY_HUMAN_GATE_CHANGES ${gate}\n\n${feedback}`;
   await github(`/issues/${match[1]}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
-  res.json({data:{runId:req.params.runId,gate,decision,recorded:true},meta:{}});
+  const recordedAt=new Date().toISOString();
+  if(gate==='design') await persistBrain(tenant,req.params.runId,'approved_designs',{decision,feedback:feedback||null,recordedAt,source:'product-owner-gate'});
+  if(gate==='production') await persistBrain(tenant,req.params.runId,'deployment_history',{decision,feedback:feedback||null,recordedAt,source:'product-owner-gate',status:decision==='approve'?'production-approved':'changes-requested'});
+  await persistBrain(tenant,req.params.runId,'decisions',{gate,decision,feedback:feedback||null,recordedAt,source:'product-owner-gate'});
+  res.json({data:{runId:req.params.runId,gate,decision,recorded:true},meta:{brainPersisted:true}});
  }catch(e){next(e)}
 });
 
