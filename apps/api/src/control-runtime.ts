@@ -86,6 +86,16 @@ app.get('/health',async(_req,res)=>{
  catch{res.status(503).json({status:'degraded',service:'ogroup-factory-control',database:'unavailable'})}
 });
 
+app.post('/internal/v1/auth/session/introspect',async(req,res,next)=>{
+ try{
+  if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
+  const token=typeof req.body?.token==='string'?req.body.token.trim():''; if(!token){res.json({data:{active:false}});return}
+  const tokenHash=createHash('sha256').update(token).digest('hex'); const rows=await sql`select s.user_id,m.tenant_id,m.id membership_id from sessions s join memberships m on m.user_id=s.user_id where s.token_hash=${tokenHash} and s.revoked_at is null and s.expires_at>now() order by m.created_at asc,m.id asc limit 1`;
+  res.json({data:rows[0]?{active:true,userId:String(rows[0].user_id),tenantId:String(rows[0].tenant_id),membershipId:String(rows[0].membership_id)}:{active:false}});
+ }catch(e){next(e)}
+});
+
 app.post('/internal/v1/auth/session/revoke',async(req,res,next)=>{
  try{
   if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
