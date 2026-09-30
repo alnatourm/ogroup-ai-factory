@@ -23,12 +23,18 @@ for(const comment of comments){
 const complete=[...groups.entries()].filter(([,g])=>g.parts.size===g.total).sort((a,b)=>Number(b[0])-Number(a[0]));
 if(!complete.length) throw new Error('FACTORY_RESULT_NOT_READY');
 const [buildId,group]=complete[0]; let encoded=''; for(let i=1;i<=group.total;i++) encoded+=group.parts.get(i)||'';
-const payload=JSON.parse(zlib.gunzipSync(Buffer.from(encoded,'base64')).toString('utf8'));
+if(encoded.length>8_000_000) throw new Error('FACTORY_RESULT_TOO_LARGE');
+const decoded=zlib.gunzipSync(Buffer.from(encoded,'base64'),{maxOutputLength:12_000_000}).toString('utf8');
+const payload=JSON.parse(decoded);
 if(payload.buildSlice!=='customer-product') throw new Error('FACTORY_RESULT_NOT_CUSTOMER_PRODUCT');
-for(const file of payload.files||[]){
+if(!Array.isArray(payload.files)||payload.files.length===0||payload.files.length>250) throw new Error('FACTORY_RESULT_INVALID_FILE_COUNT');
+let totalBytes=0;
+for(const file of payload.files){
   const p=String(file.path||'').replaceAll('\\','/');
   if(!p||p.includes('..')||p.startsWith('/')||p.startsWith('.github/')||p.startsWith('factory-evidence/')||p==='.env'||p.startsWith('.env.')) throw new Error(`FACTORY_RESULT_UNSAFE_PATH: ${p}`);
   if(typeof file.content!=='string') throw new Error(`FACTORY_RESULT_INVALID_CONTENT: ${p}`);
+  const bytes=Buffer.byteLength(file.content,'utf8'); totalBytes+=bytes;
+  if(bytes>1_000_000||totalBytes>10_000_000) throw new Error('FACTORY_RESULT_CONTENT_LIMIT_EXCEEDED');
   const destination=path.join(root,p); fs.mkdirSync(path.dirname(destination),{recursive:true}); fs.writeFileSync(destination,file.content);
 }
 console.log(JSON.stringify({type:'FACTORY_CUSTOMER_RESULT_APPLIED',runId,buildId,files:payload.files.map(file=>file.path)}));
