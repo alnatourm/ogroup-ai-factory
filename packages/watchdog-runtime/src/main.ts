@@ -45,6 +45,8 @@ async function persistDeploymentProof(runId: string, tenant: string, target: str
   const field=(name:string)=>lines.find((line)=>line.toLowerCase().startsWith(name.toLowerCase()+':'))?.slice(name.length+1).trim() ?? '';
   const commit=field('Commit'); const provider=field('Provider'); const url=field('URL');
   if(!commit||!provider||!url) throw new Error('FACTORY_DEPLOYMENT_PROOF_INCOMPLETE');
+  const request=lines.find((line)=>line.startsWith('Verified-Commit:'))?.slice('Verified-Commit:'.length).trim() ?? '';
+  if(request && request!==commit) throw new Error('FACTORY_DEPLOYMENT_COMMIT_MISMATCH');
   const response=await fetch(`${controlApiUrl.replace(/\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}/evidence`,{
     method:'POST',
     headers:{'content-type':'application/json','x-factory-control-key':controlApiKey},
