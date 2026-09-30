@@ -70,9 +70,10 @@ class MemoryAuditSink implements AuditSink {
 }
 
 const membershipResolver: MembershipResolver = {
-  async resolve(userId, tenantId) {
-    if (userId === 'user-1' && tenantId === 'tenant-a') {
+  async resolveForUser(userId) {
+    if (userId === 'user-1') {
       return {
+        tenantId: 'tenant-a',
         membershipId: 'membership-1',
         permissions: ['profile:read'],
       };
@@ -130,21 +131,21 @@ describe('OGroup API bootstrap', () => {
     expect(response.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('rejects a valid session when the user is not a member of the requested tenant', async () => {
+  it('ignores a forged tenant header and uses the server-owned membership tenant', async () => {
     const { app } = makeApp();
     const response = await request(app)
       .get('/api/v1/me')
       .set('authorization', `Bearer ${token}`)
       .set('x-tenant-id', 'tenant-b');
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(200);
+    expect(response.body.data.tenantId).toBe('tenant-a');
   });
 
   it('returns authenticated principal context for the valid tenant', async () => {
     const { app } = makeApp();
     const response = await request(app)
       .get('/api/v1/me')
-      .set('authorization', `Bearer ${token}`)
-      .set('x-tenant-id', 'tenant-a');
+      .set('authorization', `Bearer ${token}`);
     expect(response.status).toBe(200);
     expect(response.body.data).toMatchObject({
       userId: 'user-1',
@@ -157,8 +158,7 @@ describe('OGroup API bootstrap', () => {
     const { app } = makeApp();
     const response = await request(app)
       .get('/api/v1/me')
-      .set('cookie', `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`)
-      .set('x-tenant-id', 'tenant-a');
+      .set('cookie', `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`);
     expect(response.status).toBe(200);
   });
 
@@ -166,8 +166,7 @@ describe('OGroup API bootstrap', () => {
     const { app } = makeApp();
     const response = await request(app)
       .post('/api/v1/profile/ping')
-      .set('cookie', `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`)
-      .set('x-tenant-id', 'tenant-a');
+      .set('cookie', `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`);
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe('CSRF_FAILED');
   });
@@ -176,8 +175,7 @@ describe('OGroup API bootstrap', () => {
     const { app } = makeApp();
     const response = await request(app)
       .post('/api/v1/profile/ping')
-      .set('authorization', `Bearer ${token}`)
-      .set('x-tenant-id', 'tenant-a');
+      .set('authorization', `Bearer ${token}`);
     expect(response.status).toBe(200);
   });
 
@@ -254,8 +252,7 @@ describe('OGroup API bootstrap', () => {
       .post('/api/v1/auth/logout')
       .set('host', 'example.test')
       .set('origin', 'http://example.test')
-      .set('cookie', cookie ?? '')
-      .set('x-tenant-id', 'tenant-a');
+      .set('cookie', cookie ?? '');
 
     expect(logout.status).toBe(204);
     expect(logout.headers['set-cookie']?.[0]).toContain(`${SESSION_COOKIE_NAME}=;`);
@@ -263,8 +260,7 @@ describe('OGroup API bootstrap', () => {
 
     const afterLogout = await request(app)
       .get('/api/v1/me')
-      .set('cookie', cookie ?? '')
-      .set('x-tenant-id', 'tenant-a');
+      .set('cookie', cookie ?? '');
     expect(afterLogout.status).toBe(401);
   });
 
@@ -272,8 +268,7 @@ describe('OGroup API bootstrap', () => {
     const { app } = makeApp();
     const response = await request(app)
       .get('/api/v1/admin/ping')
-      .set('authorization', `Bearer ${token}`)
-      .set('x-tenant-id', 'tenant-a');
+      .set('authorization', `Bearer ${token}`);
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe('PERMISSION_DENIED');
   });
