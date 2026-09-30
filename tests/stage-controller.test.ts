@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectNextFactoryStage, type FactoryWorkItem } from '@ogroup/stage-controller';
+import { constitutionWorkItems, selectNextFactoryStage, validateConstitutionTransition, type FactoryWorkItem } from '@ogroup/stage-controller';
 
 const work = (overrides: Partial<FactoryWorkItem> & Pick<FactoryWorkItem, 'id' | 'stage'>): FactoryWorkItem => ({
   dependsOn: [],
@@ -41,5 +41,24 @@ describe('Factory stage controller', () => {
       work({ id: '2', stage: 'release', dependsOn: ['product'], humanGate: true, approved: true }),
     ]);
     expect(result.next?.stage).toBe('release');
+  });
+});
+
+
+describe('Factory constitution pipeline',()=>{
+  it('locks the canonical lifecycle order',()=>{
+    expect(constitutionWorkItems().map(x=>x.stage)).toEqual(['idea','requirements','design','design-approval','build','testing','security','review','production-approval','deploy','verify','live']);
+  });
+  it('refuses to skip unverified stages',()=>{
+    const items=constitutionWorkItems();
+    items.find(x=>x.stage==='idea')!.status='completed';
+    expect(validateConstitutionTransition(items,'build')).toEqual({allowed:false,reason:'DEPENDENCY_NOT_VERIFIED:design-approval'});
+  });
+  it('requires human authority at both approval gates',()=>{
+    const items=constitutionWorkItems();
+    for(const stage of ['idea','requirements','design']) items.find(x=>x.stage===stage)!.status='completed';
+    expect(validateConstitutionTransition(items,'design-approval')).toEqual({allowed:false,reason:'HUMAN_APPROVAL_REQUIRED'});
+    items.find(x=>x.stage==='design-approval')!.approved=true;
+    expect(validateConstitutionTransition(items,'design-approval')).toEqual({allowed:true});
   });
 });
