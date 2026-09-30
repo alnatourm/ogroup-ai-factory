@@ -39,10 +39,6 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
 function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
   return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim() === `FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
 }
-function hasDeploymentProof(comments: FactoryComment[], runId: string): boolean {
-  return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim().startsWith(`FACTORY_DEPLOYMENT_VERIFIED ${runId}`));
-}
-
 async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment): Promise<void> {
   if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
   const lines=(comment.body ?? '').split('\n').map((line)=>line.trim());
