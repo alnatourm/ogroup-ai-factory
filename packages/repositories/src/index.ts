@@ -86,15 +86,16 @@ export class SqlAuditSink implements AuditSink {
   }
 }
 
-interface MembershipRow { id: string; }
+interface MembershipRow { id: string; tenant_id: string; }
 interface PermissionRow { key: string; }
 export class SqlMembershipResolver implements MembershipResolver {
   constructor(private readonly db: SqlClient) {}
-  async resolve(userId: string, tenantId: string): Promise<{ membershipId: string; permissions: string[] } | null> {
-    const membershipResult = await this.db.query<MembershipRow>(`SELECT id FROM memberships WHERE user_id = $1 AND tenant_id = $2 LIMIT 1`, [userId, tenantId]);
+  async resolveForUser(userId: string): Promise<{ tenantId: string; membershipId: string; permissions: string[] } | null> {
+    const membershipResult = await this.db.query<MembershipRow>(`SELECT id, tenant_id FROM memberships WHERE user_id = $1 ORDER BY created_at ASC, id ASC LIMIT 1`, [userId]);
     const membership = membershipResult.rows[0]; if (!membership) return null;
+    const tenantId = membership.tenant_id;
     const permissionResult = await this.db.query<PermissionRow>(`SELECT DISTINCT p.key FROM user_roles ur JOIN roles r ON r.id = ur.role_id JOIN role_permissions rp ON rp.role_id = r.id JOIN permissions p ON p.id = rp.permission_id WHERE ur.membership_id = $1 AND ur.tenant_id = $2 AND r.tenant_id = $2 ORDER BY p.key`, [membership.id, tenantId]);
-    return { membershipId: membership.id, permissions: permissionResult.rows.map((row) => row.key) };
+    return { tenantId, membershipId: membership.id, permissions: permissionResult.rows.map((row) => row.key) };
   }
 }
 
