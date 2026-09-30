@@ -294,6 +294,21 @@ app.put('/api/v1/factory/runs/:runId/brain/:section',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
+let watchdogHeartbeat:{at:string;repository:string;results:unknown}|null=null;
+app.post('/internal/v1/watchdog/heartbeat',(req,res)=>{
+ const supplied=req.header('x-factory-control-key'); if(!controlApiKey||supplied!==controlApiKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+ const at=typeof req.body?.at==='string'?req.body.at:''; const parsed=Date.parse(at); if(!at||!Number.isFinite(parsed)){res.status(400).json({error:{code:'INVALID_HEARTBEAT'}});return}
+ watchdogHeartbeat={at:new Date(parsed).toISOString(),repository:typeof req.body?.repository==='string'?req.body.repository:repository,results:req.body?.results??[]};
+ res.status(204).send();
+});
+function watchdogHealth(){
+ if(!watchdogHeartbeat)return {status:'UNKNOWN',watchdog:'NO_HEARTBEAT',source:'watchdog-heartbeat',updatedAt:null};
+ const ageMs=Date.now()-Date.parse(watchdogHeartbeat.at); const fresh=ageMs<=180000;
+ const results=Array.isArray(watchdogHeartbeat.results)?watchdogHeartbeat.results:[];
+ const unhealthy=results.some((entry:unknown)=>{ if(!entry||typeof entry!=='object')return false; const decision=(entry as {decision?:unknown}).decision; return Boolean(decision&&typeof decision==='object'&&(decision as {healthy?:unknown}).healthy===false); });
+ return {status:fresh&&!unhealthy?'HEALTHY':fresh?'DEGRADED':'STALE',watchdog:fresh?'ACTIVE':'STALE',source:'watchdog-heartbeat',updatedAt:watchdogHeartbeat.at};
+}
+
 app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
  try{
@@ -309,7 +324,7 @@ app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
    return {id:`factory-work:${issue.number}`,name:cleanName(issue.body?.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]||issue.title.replace(/^Factory product:\s*/i,'')),status,targetRepository:targetFromBody(issue.body),updatedAt:issue.updated_at};
   });
   const attention=mapped.filter(x=>x.status==='WAITING_HUMAN');
-  res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:{status:'HEALTHY',watchdog:'ACTIVE',source:'github'},attention},meta:{source:'live'}});
+  res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:watchdogHealth(),attention},meta:{source:'live'}});
  }catch(e){next(e)}
 });
 
