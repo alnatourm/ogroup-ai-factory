@@ -45,10 +45,12 @@ describe('PostgreSQL-backed authentication repositories', () => {
     await db.query('INSERT INTO organizations (id, name) VALUES ($1, $2)', [tenantId, 'Tenant A']);
     await db.query('INSERT INTO memberships (id, tenant_id, user_id) VALUES ($1, $2, $3)', [
       membershipId,
+      tenantId,
       userId,
     ]);
     await db.query('INSERT INTO roles (id, tenant_id, name) VALUES ($1, $2, $3)', [
       roleId,
+      tenantId,
       'owner',
     ]);
     await db.query('INSERT INTO permissions (id, key) VALUES ($1, $2)', [
@@ -62,6 +64,7 @@ describe('PostgreSQL-backed authentication repositories', () => {
     await db.query('INSERT INTO user_roles (membership_id, role_id, tenant_id) VALUES ($1, $2, $3)', [
       membershipId,
       roleId,
+      tenantId,
     ]);
 
     const sessionRepository = new SqlSessionRepository(client);
