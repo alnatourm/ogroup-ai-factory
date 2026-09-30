@@ -291,7 +291,7 @@ const recovery: WatchdogRecoveryPort = {
             }
             if (delivery.state === 'failed') {
               const repairDiagnostics=latestRepairDiagnostics(comments,runId);
-              await setFactoryStatus(issueNumber,'retrying');
+              await setFactoryStatus(issueNumber,'running');
               await dispatch('factory-antigravity-build',{runId,sourceRepository:repository,sourceIssue:issueNumber,targetRepository:target,buildSlice:sliceId,productIntent:productIntent(issue),repairDiagnostics});
               console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_REPAIR_DISPATCHED', runId, target, failures: delivery.failures, diagnostics: Boolean(repairDiagnostics), at: new Date().toISOString() }));
               return;
