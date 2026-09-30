@@ -92,7 +92,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_CUSTOMER_DELIVERY_FAILED $RUN_ID
-          Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded."
+          Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded.\n          Repair-Diagnostics: workflow=$GITHUB_RUN_ID;job=$GITHUB_JOB;attempt=$GITHUB_RUN_ATTEMPT;repository=$TARGET_REPOSITORY"
       - name: Record verified completion
         if: success()
         env:
