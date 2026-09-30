@@ -23,6 +23,7 @@ function collect(dir) {
 }
 const buildSlice=process.env.FACTORY_BUILD_SLICE?.trim()||'customer-product';
 const productIntent=process.env.FACTORY_PRODUCT_INTENT?.trim()||'';
+const repairDiagnostics=process.env.FACTORY_REPAIR_DIAGNOSTICS?.trim()||'';
 const allSources=collect(root);
 const genericBuild=buildSlice==='customer-product';
 const slices={
@@ -41,6 +42,7 @@ const sources=genericBuild?allSources.slice(0,80):allSources.filter(source=>sour
 const instructions=genericBuild?`You are the OGroup AI Factory customer-product Build Agent.
 Build the requested customer software in the supplied target repository.
 Product intent: ${productIntent}
+${repairDiagnostics?`Previous verification failed. Repair the product using these diagnostics:\n${repairDiagnostics.slice(0,12000)}\nDo not merely repeat the previous implementation. Fix the reported failure while preserving verified behavior.`:''}
 Work only inside the target product repository. Preserve existing useful code. Create a runnable coherent MVP, not a demo placeholder.
 Return ONLY JSON: {"summary":"...","files":[{"path":"...","content":"complete file contents"}]}.
 Never modify .github, credentials, secrets, factory-evidence or lockfiles. Do not embed secrets. Keep the change bounded enough to verify in one execution.`:`You are the OGroup AI Factory Antigravity Build Agent.
