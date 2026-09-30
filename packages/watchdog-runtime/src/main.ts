@@ -4,7 +4,8 @@ const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factor
 const token = process.env.GITHUB_TOKEN?.trim();
 const intervalMs = Number(process.env.WATCHDOG_INTERVAL_MS ?? '60000');
 const recoveryCooldownMs = Number(process.env.WATCHDOG_RECOVERY_COOLDOWN_MS ?? '300000');
-const controlApiUrl = process.env.RAILWAY_SERVICE_FACTORY_CONTROL_API_URL?.trim() ?? '';
+const rawControlApiUrl = process.env.RAILWAY_SERVICE_FACTORY_CONTROL_API_URL?.trim() ?? '';
+const controlApiUrl = rawControlApiUrl && !/^https?:\/\//i.test(rawControlApiUrl) ? `https://${rawControlApiUrl}` : rawControlApiUrl;
 const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
 const lastRecoveryAt = new Map<string, number>();
 
