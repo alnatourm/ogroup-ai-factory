@@ -227,8 +227,13 @@ const recovery: WatchdogRecoveryPort = {
         }
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
           await setFactoryStatus(issueNumber, 'verifying');
-          await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
-          console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: target, eventType: 'factory-work-execute', runId, sliceId, at: new Date().toISOString() }));
+          if (sliceId === 'customer-product') {
+            await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
+            console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-customer-deliver', runId, sliceId, target, at: new Date().toISOString() }));
+          } else {
+            await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
+            console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: target, eventType: 'factory-work-execute', runId, sliceId, at: new Date().toISOString() }));
+          }
         } else if (!(await hasActiveAntigravityBuild(runId))) {
           await setFactoryStatus(issueNumber, 'waiting-dependency');
           await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, productIntent: productIntent(issue) });
