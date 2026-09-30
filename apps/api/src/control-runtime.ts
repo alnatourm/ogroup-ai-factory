@@ -1,7 +1,7 @@
 import express from 'express';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const databaseUrl=process.env.DATABASE_URL?.trim()??'';
 const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
@@ -13,6 +13,7 @@ const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
+const sessionTtlMs = 7*24*60*60*1000;
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
