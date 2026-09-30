@@ -4,6 +4,8 @@ const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factor
 const token = process.env.GITHUB_TOKEN?.trim();
 const intervalMs = Number(process.env.WATCHDOG_INTERVAL_MS ?? '60000');
 const recoveryCooldownMs = Number(process.env.WATCHDOG_RECOVERY_COOLDOWN_MS ?? '300000');
+const controlApiUrl = process.env.RAILWAY_SERVICE_FACTORY_CONTROL_API_URL?.trim() ?? '';
+const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
 const lastRecoveryAt = new Map<string, number>();
 
 const DASHBOARD_SLICES = [
@@ -234,9 +236,15 @@ const recovery: WatchdogRecoveryPort = {
   },
 };
 
+async function reportHeartbeat(results: unknown): Promise<void> {
+  if (!controlApiUrl || !controlApiKey) return;
+  const response = await fetch(`${controlApiUrl.replace(/\/$/,'')}/internal/v1/watchdog/heartbeat`, { method:'POST', headers:{'content-type':'application/json','x-factory-control-key':controlApiKey}, body:JSON.stringify({results,repository,at:new Date().toISOString()}) });
+  if (!response.ok) throw new Error(`WATCHDOG_HEARTBEAT_${response.status}`);
+}
+
 console.log(JSON.stringify({ type: 'WATCHDOG_STARTED', repository, intervalMs, at: new Date().toISOString() }));
 await runWatchdogLoop(state, recovery, {
   intervalMs,
-  onTick(results) { console.log(JSON.stringify({ type: 'WATCHDOG_TICK', results, at: new Date().toISOString() })); },
+  onTick(results) { console.log(JSON.stringify({ type: 'WATCHDOG_TICK', results, at: new Date().toISOString() })); void reportHeartbeat(results).catch(error=>console.error(JSON.stringify({type:'WATCHDOG_HEARTBEAT_ERROR',error:error instanceof Error?error.message:String(error),at:new Date().toISOString()}))); },
   onError(error) { console.error(JSON.stringify({ type: 'WATCHDOG_ERROR', error: error instanceof Error ? error.message : String(error), at: new Date().toISOString() })); },
 });
