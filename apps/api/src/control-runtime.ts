@@ -1,7 +1,7 @@
 import express from 'express';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 
 const databaseUrl=process.env.DATABASE_URL?.trim()??'';
 const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
@@ -13,6 +13,7 @@ const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
+const sessionTtlMs = 7*24*60*60*1000;
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
@@ -73,6 +74,31 @@ app.get('/health',async(_req,res)=>{
  if(!db||!sql){res.json({status:'ok',service:'ogroup-factory-control',database:'not-configured'});return}
  try{await sql`select 1`;res.json({status:'ok',service:'ogroup-factory-control',database:'connected'})}
  catch{res.status(503).json({status:'degraded',service:'ogroup-factory-control',database:'unavailable'})}
+});
+
+app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
+ try{
+  if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
+  const subject=typeof req.body?.subject==='string'?req.body.subject.trim():'';
+  const email=typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'';
+  if(!subject||!email){res.status(400).json({error:{code:'INVALID_GOOGLE_IDENTITY'}});return}
+  const identities=await sql`select user_id from external_identities where provider='google' and subject=${subject} limit 1`;
+  let userId=identities[0]?.user_id?String(identities[0].user_id):'';
+  if(!userId){
+   const users=await sql`select id from users where lower(email)=${email} limit 1`;
+   if(!users[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+   userId=String(users[0].id);
+   const membership=await sql`select id from memberships where user_id=${userId} limit 1`;
+   if(!membership[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+   await sql`insert into external_identities(provider,subject,user_id,email) values('google',${subject},${userId},${email}) on conflict(provider,subject) do nothing`;
+  }
+  const memberships=await sql`select id,tenant_id from memberships where user_id=${userId} order by created_at asc,id asc limit 1`;
+  if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+  const raw=randomBytes(32).toString('base64url'); const hash=createHash('sha256').update(raw).digest('hex'); const sessionId=randomUUID(); const expiresAt=new Date(Date.now()+sessionTtlMs);
+  await sql`insert into sessions(id,user_id,token_hash,expires_at) values(${sessionId},${userId},${hash},${expiresAt})`;
+  res.json({data:{token:raw,userId,tenantId:String(memberships[0].tenant_id),membershipId:String(memberships[0].id),expiresAt:expiresAt.toISOString()}});
+ }catch(e){next(e)}
 });
 
 const byokMasterKey=process.env.FACTORY_BYOK_MASTER_KEY?.trim()??'';
