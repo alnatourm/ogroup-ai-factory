@@ -94,5 +94,5 @@ if(!text) throw new Error(`ANTIGRAVITY_OUTPUT_MISSING: ${result.id}`);
 const payload=JSON.parse(text.trim().replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,''));
 if(!Array.isArray(payload.files)||!payload.files.length) throw new Error('ANTIGRAVITY_NO_IMPLEMENTATION_FILES');
 for(const file of payload.files){const p=String(file.path||'').replaceAll('\\\\','/');if(p.includes('..')||p.startsWith('/')||p.startsWith('.github/')||p.startsWith('factory-evidence/'))throw new Error(`ANTIGRAVITY_UNSAFE_PATH: ${p}`);if(typeof file.content!=='string')throw new Error(`ANTIGRAVITY_INVALID_CONTENT: ${p}`);}
-fs.writeFileSync(output,JSON.stringify({provider:'google-antigravity',interactionId:result.id,sliceId,summary:payload.summary||null,files:payload.files}));
-console.log(JSON.stringify({type:'FACTORY_ANTIGRAVITY_BUILD_READY',interactionId:result.id,sliceId,files:payload.files.map(f=>f.path)}));
+fs.writeFileSync(output,JSON.stringify({provider:'google-antigravity',interactionId:result.id,buildSlice,summary:payload.summary||null,files:payload.files}));
+console.log(JSON.stringify({type:'FACTORY_ANTIGRAVITY_BUILD_READY',interactionId:result.id,buildSlice,files:payload.files.map(f=>f.path)}));
