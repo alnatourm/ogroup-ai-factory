@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
+      TARGET_GITHUB_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
       TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
@@ -28,15 +28,18 @@ jobs:
           node-version: 22
       - name: Require delivery context
         run: |
-          test -n "$GH_TOKEN"
+          test -n "$TARGET_GITHUB_TOKEN"
           test -n "$TARGET_REPOSITORY"
           test -n "$SOURCE_ISSUE"
           test -n "$RUN_ID"
       - name: Clone customer repository
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
         run: gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
       - name: Apply generated product payload
         run: node scripts/apply-customer-build-result.mjs /tmp/customer-product
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_REPOSITORY: ${{ github.repository }}
       - name: Verify customer product
         working-directory: /tmp/customer-product
@@ -60,6 +63,8 @@ jobs:
             exit 1
           fi
       - name: Commit verified product
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
         working-directory: /tmp/customer-product
         run: |
           git config user.name "OGroup AI Factory"
@@ -83,11 +88,15 @@ jobs:
           Verification workflow: $GITHUB_RUN_ID"
       - name: Record delivery failure
         if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_CUSTOMER_DELIVERY_FAILED $RUN_ID
           Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded."
       - name: Record verified completion
         if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_SLICE_COMPLETED $RUN_ID customer-product
           Verified customer product was applied, tested and pushed to $TARGET_REPOSITORY."
