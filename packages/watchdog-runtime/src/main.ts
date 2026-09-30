@@ -98,16 +98,13 @@ const state: WatchdogStatePort = {
       });
     }
 
-    // Compatibility fallback until all Factory projects are represented by durable factory-work issues.
-    const workRemains = prs.length > 0;
-    return [{
-      runId: `github:${repository}`,
-      workRemains,
-      activeJob: active,
-      lastActivityAt: latest?.updated_at ?? null,
-      waitingHuman: humanGate,
-      fallbackAvailable: false,
-    }];
+    // No durable factory-work issue means there is no customer run for Watchdog to recover.
+    // Open engineering PRs and CI runs are builder activity, not autonomous product work.
+    // Treating them as customer work caused false IDLE_UNEXPECTED recovery loops.
+    if (active) {
+      console.log(JSON.stringify({ type: 'WATCHDOG_ENGINEERING_ACTIVITY_IGNORED', repository, latestActivityAt: latest?.updated_at ?? null, humanGate, at: new Date().toISOString() }));
+    }
+    return [];
   },
 };
 

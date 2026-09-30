@@ -15,6 +15,7 @@ describe('Watchdog runtime contract', () => {
     expect(source).toContain('factory-status:running');
     expect(source).toContain('factory-status:completed');
     expect(source).toContain('factory-fallback:approved');
-    expect(source).toContain('Compatibility fallback');
+    expect(source).toContain('No durable factory-work issue means there is no customer run for Watchdog to recover.');
+    expect(source).toContain('return [];');
   });
 });
