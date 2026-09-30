@@ -90,6 +90,8 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
  try{
   if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
   if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
+  await sql`create table if not exists external_identities (provider text not null,subject text not null,user_id uuid not null references users(id) on delete cascade,email text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),primary key(provider,subject))`;
+  await sql`create index if not exists external_identities_user_idx on external_identities(user_id)`;
   const subject=typeof req.body?.subject==='string'?req.body.subject.trim():'';
   const email=typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'';
   if(!subject||!email){res.status(400).json({error:{code:'INVALID_GOOGLE_IDENTITY'}});return}
