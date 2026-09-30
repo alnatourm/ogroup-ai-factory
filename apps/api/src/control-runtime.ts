@@ -86,6 +86,16 @@ app.get('/health',async(_req,res)=>{
  catch{res.status(503).json({status:'degraded',service:'ogroup-factory-control',database:'unavailable'})}
 });
 
+app.post('/internal/v1/auth/session/revoke',async(req,res,next)=>{
+ try{
+  if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
+  const token=typeof req.body?.token==='string'?req.body.token.trim():''; if(!token){res.status(400).json({error:{code:'TOKEN_REQUIRED'}});return}
+  const tokenHash=createHash('sha256').update(token).digest('hex'); await sql`update sessions set revoked_at=coalesce(revoked_at,now()) where token_hash=${tokenHash}`;
+  res.status(204).send();
+ }catch(e){next(e)}
+});
+
 app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
  try{
   if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
