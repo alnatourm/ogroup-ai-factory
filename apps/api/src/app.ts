@@ -69,10 +69,6 @@ function sessionToken(request: Request): { token: string; source: SessionTokenSo
   return cookieToken ? { token: cookieToken, source: 'cookie' } : null;
 }
 
-function tenantId(request: Request): string | null {
-  return request.header('x-tenant-id')?.trim() || null;
-}
-
 function sameOrigin(request: Request): boolean {
   return isSameOriginMutation({
     method: request.method,
@@ -181,9 +177,8 @@ export function createApp(dependencies: AppDependencies) {
 
   app.use('/api/v1', async (request, response, next) => {
     const session = sessionToken(request);
-    const requestedTenantId = tenantId(request);
 
-    if (!session || !requestedTenantId) {
+    if (!session) {
       response.status(401).json({ error: { code: 'UNAUTHENTICATED', message: 'Authentication required.' } });
       return;
     }
@@ -196,7 +191,6 @@ export function createApp(dependencies: AppDependencies) {
     try {
       const principal = await authenticateSession({
         token: session.token,
-        tenantId: requestedTenantId,
         sessionStore: dependencies.sessionStore,
         membershipResolver: dependencies.membershipResolver,
       });
