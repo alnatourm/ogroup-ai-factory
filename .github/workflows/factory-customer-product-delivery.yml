@@ -42,11 +42,18 @@ jobs:
         working-directory: /tmp/customer-product
         run: |
           if [ -f package.json ]; then
-            npm install
+            if [ -f package-lock.json ]; then npm ci; else npm install; fi
             npm run lint --if-present
             npm run typecheck --if-present
             npm test --if-present
             npm run build --if-present
+          elif [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+            python -m compileall -q .
+            if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+            if [ -d tests ]; then python -m pytest -q; fi
+          else
+            echo "Unsupported customer product: no package.json, pyproject.toml, or requirements.txt"
+            exit 1
           fi
       - name: Commit verified product
         working-directory: /tmp/customer-product
