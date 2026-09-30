@@ -18,6 +18,9 @@ jobs:
       TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
+      TENANT_ID: ${{ github.event.client_payload.tenant }}
+      FACTORY_CONTROL_API_URL: ${{ secrets.FACTORY_CONTROL_API_URL }}
+      FACTORY_CALLBACK_TOKEN: ${{ secrets.FACTORY_CALLBACK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -54,6 +57,10 @@ jobs:
           git diff --cached --quiet && { echo "No implementation change"; exit 1; }
           git commit -m "build: verified customer product $RUN_ID"
           git push origin HEAD:main
+      - name: Persist verified testing evidence
+        if: env.FACTORY_CONTROL_API_URL != '' && env.FACTORY_CALLBACK_TOKEN != '' && env.TENANT_ID != ''
+        working-directory: /tmp/customer-product
+        run: node "$GITHUB_WORKSPACE/scripts/report-customer-evidence.mjs"
       - name: Record verified completion
         run: |
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_SLICE_COMPLETED $RUN_ID customer-product

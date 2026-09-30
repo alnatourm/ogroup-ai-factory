@@ -138,6 +138,11 @@ function targetRepository(issue: FactoryIssue): string | null {
   }
   return null;
 }
+function tenantFromIssue(issue: FactoryIssue): string {
+  const match = (issue.body ?? '').match(/^Tenant:\s*(\S+)\s*$/mi);
+  if (!match?.[1]) throw new Error('FACTORY_TENANT_REQUIRED');
+  return match[1];
+}
 async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
   const runs = await response.json() as { workflow_runs?: Array<{ id: number }> };
@@ -228,7 +233,7 @@ const recovery: WatchdogRecoveryPort = {
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
           await setFactoryStatus(issueNumber, 'verifying');
           if (sliceId === 'customer-product') {
-            await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
+            await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: tenantFromIssue(issue) });
             console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-customer-deliver', runId, sliceId, target, at: new Date().toISOString() }));
           } else {
             await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
