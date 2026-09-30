@@ -36,6 +36,13 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
   return { state, failures };
 }
 
+function latestRepairDiagnostics(comments: FactoryComment[], runId: string): string {
+  const failures=comments.filter((comment)=>(comment.body??'').split('\n',1)[0]?.trim().startsWith(`FACTORY_CUSTOMER_DELIVERY_FAILED ${runId}`));
+  const body=failures.at(-1)?.body??'';
+  const line=body.split('\n').map((value)=>value.trim()).find((value)=>value.startsWith('Repair-Diagnostics:'))??'';
+  return line.slice('Repair-Diagnostics:'.length).trim().slice(0,12000);
+}
+
 function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
   return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim() === `FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
 }
@@ -283,7 +290,11 @@ const recovery: WatchdogRecoveryPort = {
               return;
             }
             if (delivery.state === 'failed') {
-              console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_DELIVERY_RETRY', runId, target, failures: delivery.failures, at: new Date().toISOString() }));
+              const repairDiagnostics=latestRepairDiagnostics(comments,runId);
+              await setFactoryStatus(issueNumber,'retrying');
+              await dispatch('factory-antigravity-build',{runId,sourceRepository:repository,sourceIssue:issueNumber,targetRepository:target,buildSlice:sliceId,productIntent:productIntent(issue),repairDiagnostics});
+              console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_REPAIR_DISPATCHED', runId, target, failures: delivery.failures, diagnostics: Boolean(repairDiagnostics), at: new Date().toISOString() }));
+              return;
             }
             await github(`/issues/${issueNumber}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}` }) });
             await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: tenantFromIssue(issue) });
