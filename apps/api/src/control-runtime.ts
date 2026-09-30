@@ -305,7 +305,7 @@ function watchdogHealth(){
  if(!watchdogHeartbeat)return {status:'UNKNOWN',watchdog:'NO_HEARTBEAT',source:'watchdog-heartbeat',updatedAt:null};
  const ageMs=Date.now()-Date.parse(watchdogHeartbeat.at); const fresh=ageMs<=180000;
  const results=Array.isArray(watchdogHeartbeat.results)?watchdogHeartbeat.results:[];
- const unhealthy=results.some((entry:any)=>entry?.decision?.healthy===false);
+ const unhealthy=results.some((entry:unknown)=>{ if(!entry||typeof entry!=='object')return false; const decision=(entry as {decision?:unknown}).decision; return Boolean(decision&&typeof decision==='object'&&(decision as {healthy?:unknown}).healthy===false); });
  return {status:fresh&&!unhealthy?'HEALTHY':fresh?'DEGRADED':'STALE',watchdog:fresh?'ACTIVE':'STALE',source:'watchdog-heartbeat',updatedAt:watchdogHeartbeat.at};
 }
 
