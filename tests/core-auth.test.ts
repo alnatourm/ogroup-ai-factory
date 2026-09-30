@@ -27,14 +27,10 @@ function storeFor(token: string, expiresAt: Date, revokedAt: Date | null = null)
 }
 
 const memberships: MembershipResolver = {
-  async resolve(userId, tenantId) {
-    if (userId === 'user-1' && tenantId === 'tenant-a') {
-      return {
-        membershipId: 'membership-1',
-        permissions: ['profile:read'],
-      };
+  async resolveForUser(userId) {
+    if (userId === 'user-1') {
+      return { tenantId: 'tenant-a', membershipId: 'membership-1', permissions: ['profile:read'] };
     }
-
     return null;
   },
 };
@@ -48,11 +44,10 @@ describe('authentication core', () => {
     expect(first.length).toBeGreaterThan(32);
   });
 
-  it('authenticates only active sessions with membership in the requested tenant', async () => {
+  it('authenticates active sessions using the server-resolved membership tenant', async () => {
     const token = 'known-token';
     const principal = await authenticateSession({
       token,
-      tenantId: 'tenant-a',
       sessionStore: storeFor(token, new Date('2030-01-01T00:00:00Z')),
       membershipResolver: memberships,
       now: new Date('2026-09-07T00:00:00Z'),
@@ -60,22 +55,12 @@ describe('authentication core', () => {
 
     expect(principal?.tenantId).toBe('tenant-a');
 
-    const wrongTenant = await authenticateSession({
-      token,
-      tenantId: 'tenant-b',
-      sessionStore: storeFor(token, new Date('2030-01-01T00:00:00Z')),
-      membershipResolver: memberships,
-      now: new Date('2026-09-07T00:00:00Z'),
-    });
-
-    expect(wrongTenant).toBeNull();
   });
 
   it('rejects expired sessions and missing permissions', async () => {
     const token = 'expired-token';
     const principal = await authenticateSession({
       token,
-      tenantId: 'tenant-a',
       sessionStore: storeFor(token, new Date('2020-01-01T00:00:00Z')),
       membershipResolver: memberships,
       now: new Date('2026-09-07T00:00:00Z'),
@@ -85,7 +70,6 @@ describe('authentication core', () => {
 
     const activePrincipal = await authenticateSession({
       token: 'active-token',
-      tenantId: 'tenant-a',
       sessionStore: storeFor('active-token', new Date('2030-01-01T00:00:00Z')),
       membershipResolver: memberships,
       now: new Date('2026-09-07T00:00:00Z'),

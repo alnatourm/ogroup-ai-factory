@@ -82,7 +82,6 @@ describe('PostgreSQL-backed authentication repositories', () => {
 
     const principal = await authenticateSession({
       token: created.token,
-      tenantId,
       sessionStore: sessionRepository,
       membershipResolver,
       now: new Date('2026-09-07T00:00:00Z'),
@@ -91,14 +90,6 @@ describe('PostgreSQL-backed authentication repositories', () => {
     expect(principal?.membershipId).toBe(membershipId);
     expect(principal?.permissions.has('admin:access')).toBe(true);
 
-    const wrongTenant = await authenticateSession({
-      token: created.token,
-      tenantId: '66666666-6666-4666-8666-666666666666',
-      sessionStore: sessionRepository,
-      membershipResolver,
-      now: new Date('2026-09-07T00:00:00Z'),
-    });
-    expect(wrongTenant).toBeNull();
 
     expect(
       await sessionRepository.revoke({ sessionId: created.session.id, userId }),
@@ -106,7 +97,6 @@ describe('PostgreSQL-backed authentication repositories', () => {
 
     const revoked = await authenticateSession({
       token: created.token,
-      tenantId,
       sessionStore: sessionRepository,
       membershipResolver,
       now: new Date('2026-09-07T00:00:00Z'),
