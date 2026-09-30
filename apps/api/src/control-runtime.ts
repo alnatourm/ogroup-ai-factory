@@ -329,7 +329,11 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\n${tenant}\n\n## Source\nProduct Owner Dashboard`;
   const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
   const issue=await response.json() as Issue;
-  res.status(202).json({data:{runId:`factory-work:${issue.number}`,name:productName,targetRepository,status:'QUEUED'},meta:{}});
+  const runId=`factory-work:${issue.number}`;
+  const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
+  await persistBrain(tenant,runId,'requirements',intake);
+  await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
+  res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
  }catch(e){next(e)}
 });
 
