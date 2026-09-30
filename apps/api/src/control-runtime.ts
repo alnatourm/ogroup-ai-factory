@@ -339,6 +339,18 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
 
 app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
 
+app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
+ try{
+  const supplied=req.header('x-factory-control-key'); if(!controlKey||supplied!==controlKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  const tenant=typeof req.body?.tenant==='string'?req.body.tenant.trim():''; const kind=req.body?.kind; const evidence=req.body?.evidence;
+  if(!tenant||!['testing','deployment'].includes(kind)||!evidence||typeof evidence!=='object'){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return}
+  const issue=await ownedRun(tenant,req.params.runId); if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  const section:BrainSection=kind==='testing'?'testing_evidence':'deployment_history'; const recordedAt=new Date().toISOString();
+  const persisted=await persistBrain(tenant,req.params.runId,section,{...evidence,recordedAt,source:'verified-execution-callback'});
+  res.status(201).json({data:{runId:req.params.runId,section,persisted:Boolean(persisted)},meta:{source:'postgres'}});
+ }catch(e){next(e)}
+});
+
 app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res); if(!tenant)return;
