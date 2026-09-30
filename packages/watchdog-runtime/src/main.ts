@@ -25,6 +25,13 @@ async function factoryComments(issueNumber: number): Promise<FactoryComment[]> {
   return await response.json() as FactoryComment[];
 }
 
+function customerDeliveryStarted(comments: FactoryComment[], runId: string): boolean {
+  return comments.some((comment) => {
+    const firstLine = (comment.body ?? '').split('\n', 1)[0]?.trim() ?? '';
+    return firstLine === `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}`;
+  });
+}
+
 function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
   const done = new Set<string>();
   for (const comment of comments) {
@@ -233,6 +240,11 @@ const recovery: WatchdogRecoveryPort = {
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
           await setFactoryStatus(issueNumber, 'verifying');
           if (sliceId === 'customer-product') {
+            if (customerDeliveryStarted(comments, runId)) {
+              console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_DELIVERY_ALREADY_STARTED', runId, target, at: new Date().toISOString() }));
+              return;
+            }
+            await github(`/issues/${issueNumber}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}` }) });
             await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: tenantFromIssue(issue) });
             console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-customer-deliver', runId, sliceId, target, at: new Date().toISOString() }));
           } else {
