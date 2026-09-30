@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { Buffer } from 'node:buffer';
 
 const root=process.argv[2];
 const sourceRepository=process.env.SOURCE_REPOSITORY;
