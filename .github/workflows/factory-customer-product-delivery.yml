@@ -72,6 +72,15 @@ jobs:
         if: env.FACTORY_CONTROL_API_URL != '' && env.FACTORY_CALLBACK_TOKEN != '' && env.TENANT_ID != ''
         working-directory: /tmp/customer-product
         run: node "$GITHUB_WORKSPACE/scripts/report-customer-evidence.mjs"
+      - name: Request verified deployment
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_DEPLOYMENT_REQUESTED $RUN_ID
+          Repository: $TARGET_REPOSITORY
+          Commit: $(git -C /tmp/customer-product rev-parse HEAD)
+          Verification workflow: $GITHUB_RUN_ID"
       - name: Record delivery failure
         if: failure()
         run: |
