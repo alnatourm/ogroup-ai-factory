@@ -164,6 +164,14 @@ async function completeFactoryIssue(issueNumber: number, runId: string, target: 
   console.log(JSON.stringify({ type: 'WATCHDOG_COMPLETED_FROM_MERGED_PR', runId, target, issueNumber, at: new Date().toISOString() }));
 }
 
+async function setFactoryStatus(issueNumber: number, status: 'running'|'verifying'|'waiting-dependency'|'waiting-human'|'completed'): Promise<void> {
+  const response = await github(`/issues/${issueNumber}`);
+  const issue = await response.json() as FactoryIssue;
+  const labels = (issue.labels ?? []).map((label) => label.name).filter((name): name is string => Boolean(name)).filter((name) => !name.startsWith('factory-status:'));
+  labels.push('factory-work', `factory-status:${status}`);
+  await github(`/issues/${issueNumber}/labels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ labels: [...new Set(labels)] }) });
+}
+
 async function dispatchTo(target: string, eventType: string, payload: Record<string, unknown>): Promise<void> {
   const response = await fetch(`https://api.github.com/repos/${target}/dispatches`, {
     method: 'POST',
@@ -197,6 +205,7 @@ const recovery: WatchdogRecoveryPort = {
       if (!target) throw new Error(`FACTORY_TARGET_REPOSITORY_REQUIRED_${issueNumber}`);
       if (target === repository) throw new Error(`FACTORY_TARGET_REPOSITORY_MUST_DIFFER_FROM_SUPERVISOR_${issueNumber}`);
       console.log(JSON.stringify({ type: 'WATCHDOG_TARGET_RESOLVED', runId, issueNumber, target, at: new Date().toISOString() }));
+      await setFactoryStatus(issueNumber, 'running');
       {
         const comments = await factoryComments(issueNumber);
         const done = completedSlices(comments, runId);
@@ -207,9 +216,11 @@ const recovery: WatchdogRecoveryPort = {
           return;
         }
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
+          await setFactoryStatus(issueNumber, 'verifying');
           await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
           console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: target, eventType: 'factory-work-execute', runId, sliceId, at: new Date().toISOString() }));
         } else if (!(await hasActiveAntigravityBuild(runId))) {
+          await setFactoryStatus(issueNumber, 'waiting-dependency');
           await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId });
           console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-antigravity-build', runId, sliceId, target, at: new Date().toISOString() }));
         }
@@ -221,6 +232,7 @@ const recovery: WatchdogRecoveryPort = {
   async retryActiveJob(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-retry', { runId, reason: 'STALLED' }); },
   async useApprovedFallback(runId) { if (canRecover(runId)) await dispatch('factory-watchdog-fallback', { runId }); },
   async escalateHuman(runId, reason) {
+    if (runId.startsWith('factory-work:')) await setFactoryStatus(Number(runId.split(':')[1]), 'waiting-human');
     console.log(JSON.stringify({ type: 'WAITING_HUMAN', runId, reason, at: new Date().toISOString() }));
   },
 };
