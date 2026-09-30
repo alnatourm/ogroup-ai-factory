@@ -42,7 +42,8 @@ export interface CredentialStore {
 }
 
 export interface MembershipResolver {
-  resolve(userId: string, tenantId: string): Promise<{
+  resolveForUser(userId: string): Promise<{
+    tenantId: string;
     membershipId: string;
     permissions: string[];
   } | null>;
@@ -120,7 +121,6 @@ export async function authenticateCredentials(input: {
 
 export async function authenticateSession(input: {
   token: string;
-  tenantId: string;
   sessionStore: SessionStore;
   membershipResolver: MembershipResolver;
   now?: Date;
@@ -132,14 +132,14 @@ export async function authenticateSession(input: {
     return null;
   }
 
-  const membership = await input.membershipResolver.resolve(session.userId, input.tenantId);
+  const membership = await input.membershipResolver.resolveForUser(session.userId);
   if (!membership) {
     return null;
   }
 
   return {
     userId: session.userId,
-    tenantId: input.tenantId,
+    tenantId: membership.tenantId,
     membershipId: membership.membershipId,
     permissions: new Set(membership.permissions),
   };
