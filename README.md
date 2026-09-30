@@ -194,3 +194,39 @@ The Factory API now defines an authenticated, tenant-scoped control bridge throu
 All control endpoints sit behind the existing session + tenant authentication middleware and require `admin:access`. The API contract is intentionally a port: the deployed Factory runtime must inject the real implementation backed by Orchestrator, Stage Controller, Watchdog, Agent Registry/evidence sources, and release governance. If that implementation is not configured, these routes are not mounted. Missing runtime capability must never be represented by mock success.
 
 **Security boundary:** provider secrets remain in the Factory runtime. The Dashboard receives status/evidence and sends Product Owner commands only.
+
+
+## Direct Builder Mode - Current Operating Rule (2026-09-30)
+
+The AI Factory is the **product being built**, not the system responsible for building itself during the current completion phase.
+
+### Who builds now
+
+- ChatGPT / GPT-5.6 Sol acts as the direct software builder using the connected GitHub, CI, Railway and PostgreSQL tooling.
+- Existing working code is preserved and extended. Do not restart from scratch.
+- Do **not** dispatch product-development work back through the unfinished Factory, Antigravity self-build loop, or Factory Product Worker unless the Product Owner explicitly changes this rule.
+- GitHub Actions is a verification bench. Railway is the deployment target. Neither replaces direct implementation ownership.
+- The Product Owner provides product direction and approvals, not routine branch, CI, repair, merge or deployment operations.
+
+### Direct execution loop
+
+For each remaining product gap, execute directly:
+
+1. Inspect the existing implementation and production state.
+2. Implement the smallest complete product change directly in the correct repository.
+3. Run exact-head CI / quality verification.
+4. If verification fails, inspect and repair directly, then re-run it.
+5. Merge only the exact verified head.
+6. Verify the exact merged SHA reaches Railway production with SUCCESS when deployment applies.
+7. Verify real behavior/evidence before claiming completion.
+8. Continue to the next product gap without handing development back to the Factory.
+
+### Current product state
+
+The Dashboard now includes durable/authenticated product surfaces for Factory Home, Create Product, Project Control Room, Project Brain, Design Approval, Product Review, My Factory, Providers & encrypted BYOK metadata, Models, Agent Registry, Roles, Usage & Billing, Factory Health, Needs My Attention, Factory Activity and Settings. Static demo workforce data and synthetic verification evidence have been removed from the customer-facing control plane.
+
+Factory run intake persists requirements and queued task state into Project Brain. The Watchdog lifecycle patch now publishes real factory-status:* state transitions while work is dispatched so the Dashboard can reflect orchestration truth instead of leaving active work at QUEUED.
+
+### Remaining completion direction
+
+Continue directly with lifecycle truth, orchestration/evidence persistence, Watchdog hardening, production verification, and the full customer journey test. Google OAuth external setup can remain a later external configuration step and must not block direct product completion.
