@@ -76,6 +76,31 @@ app.get('/health',async(_req,res)=>{
  catch{res.status(503).json({status:'degraded',service:'ogroup-factory-control',database:'unavailable'})}
 });
 
+app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
+ try{
+  if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
+  const subject=typeof req.body?.subject==='string'?req.body.subject.trim():'';
+  const email=typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'';
+  if(!subject||!email){res.status(400).json({error:{code:'INVALID_GOOGLE_IDENTITY'}});return}
+  const identities=await sql`select user_id from external_identities where provider='google' and subject=${subject} limit 1`;
+  let userId=identities[0]?.user_id?String(identities[0].user_id):'';
+  if(!userId){
+   const users=await sql`select id from users where lower(email)=${email} limit 1`;
+   if(!users[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+   userId=String(users[0].id);
+   const membership=await sql`select id from memberships where user_id=${userId} limit 1`;
+   if(!membership[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+   await sql`insert into external_identities(provider,subject,user_id,email) values('google',${subject},${userId},${email}) on conflict(provider,subject) do nothing`;
+  }
+  const memberships=await sql`select id,tenant_id from memberships where user_id=${userId} order by created_at asc,id asc limit 1`;
+  if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
+  const raw=randomBytes(32).toString('base64url'); const hash=createHash('sha256').update(raw).digest('hex'); const sessionId=randomUUID(); const expiresAt=new Date(Date.now()+sessionTtlMs);
+  await sql`insert into sessions(id,user_id,token_hash,expires_at) values(${sessionId},${userId},${hash},${expiresAt})`;
+  res.json({data:{token:raw,userId,tenantId:String(memberships[0].tenant_id),membershipId:String(memberships[0].id),expiresAt:expiresAt.toISOString()}});
+ }catch(e){next(e)}
+});
+
 const byokMasterKey=process.env.FACTORY_BYOK_MASTER_KEY?.trim()??'';
 function vaultKey(){if(!byokMasterKey)throw new Error('BYOK_VAULT_NOT_CONFIGURED');return createHash('sha256').update(byokMasterKey).digest()}
 function encryptSecret(secret:string){const iv=randomBytes(12);const cipher=createCipheriv('aes-256-gcm',vaultKey(),iv);const encrypted=Buffer.concat([cipher.update(secret,'utf8'),cipher.final()]);const tag=cipher.getAuthTag();return {ciphertext:encrypted.toString('base64'),iv:iv.toString('base64'),tag:tag.toString('base64')}}
