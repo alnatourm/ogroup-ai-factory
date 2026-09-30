@@ -25,11 +25,14 @@ async function factoryComments(issueNumber: number): Promise<FactoryComment[]> {
   return await response.json() as FactoryComment[];
 }
 
-function customerDeliveryStarted(comments: FactoryComment[], runId: string): boolean {
-  return comments.some((comment) => {
+function customerDeliveryState(comments: FactoryComment[], runId: string): 'not-started'|'started'|'failed' {
+  let state: 'not-started'|'started'|'failed' = 'not-started';
+  for (const comment of comments) {
     const firstLine = (comment.body ?? '').split('\n', 1)[0]?.trim() ?? '';
-    return firstLine === `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}`;
-  });
+    if (firstLine === `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}`) state = 'started';
+    if (firstLine.startsWith(`FACTORY_CUSTOMER_DELIVERY_FAILED ${runId}`)) state = 'failed';
+  }
+  return state;
 }
 
 function completedSlices(comments: FactoryComment[], runId: string): Set<string> {
@@ -240,9 +243,13 @@ const recovery: WatchdogRecoveryPort = {
         if (await hasAntigravityResult(issueNumber, runId, sliceId)) {
           await setFactoryStatus(issueNumber, 'verifying');
           if (sliceId === 'customer-product') {
-            if (customerDeliveryStarted(comments, runId)) {
+            const deliveryState = customerDeliveryState(comments, runId);
+            if (deliveryState === 'started') {
               console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_DELIVERY_ALREADY_STARTED', runId, target, at: new Date().toISOString() }));
               return;
+            }
+            if (deliveryState === 'failed') {
+              console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_DELIVERY_RETRY', runId, target, at: new Date().toISOString() }));
             }
             await github(`/issues/${issueNumber}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}` }) });
             await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: tenantFromIssue(issue) });
