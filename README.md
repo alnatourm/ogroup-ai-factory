@@ -230,3 +230,31 @@ Factory run intake persists requirements and queued task state into Project Brai
 ### Remaining completion direction
 
 Continue directly with lifecycle truth, orchestration/evidence persistence, Watchdog hardening, production verification, and the full customer journey test. Google OAuth external setup can remain a later external configuration step and must not block direct product completion.
+
+
+### Direct Builder Progress - 2026-09-30
+
+The direct-builder completion loop remains active. The Factory remains the product, not the developer.
+
+Verified completion since the previous status:
+- Durable customer run intake and Project Brain persistence.
+- Generic customer-product build routing while preserving the existing Dashboard-specific path.
+- Factory-owned customer delivery worker with generated-payload reconstruction and path safety.
+- Durable verified testing evidence callbacks.
+- Watchdog heartbeat truth and heartbeat URL normalization.
+- Evidence-driven Dashboard lifecycle reporting.
+- Customer delivery failure evidence, duplicate-dispatch prevention, bounded automatic recovery, and escalation after repeated failures.
+- Authenticated private customer-repository checkout.
+- Node and Python customer-product verification with fail-closed behavior for unsupported stacks.
+- Stack-specific verification evidence that records checks actually executed.
+- Deployment evidence callback contract supporting provider, deployed URL, exact commit, workflow run, and verified status.
+
+Current completion lane:
+1. Wire a real deployment provider path and persist verified deployment evidence.
+2. Make Deploy and Live states depend only on durable deployment proof.
+3. Prove Build For Me end to end on a disposable customer project.
+4. Prove Build With My AI / BYOK execution end to end without exposing customer credentials.
+5. Complete commercial workspace onboarding, memberships/RBAC, plans, quotas, subscriptions, billing history, and account administration.
+6. Run the full production acceptance journey and repair every failure before declaring the SaaS complete.
+
+The recurring builder loop must continue inspect -> implement -> test -> repair -> exact-head verify -> merge -> deploy -> production verify -> README/status update -> next task. Queued CI or deployment is not a stopping point when independent work remains.
