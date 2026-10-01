@@ -401,13 +401,16 @@ app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
 app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res); if(!tenant)return;
-  const match=req.params.runId.match(/factory-work:(\d+)/); const gate=req.params.gate; const decision=req.params.decision;
-  if(!match||!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}
-  const issueResponse=await github(`/issues/${match[1]}`); const issue=await issueResponse.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  const gate=req.params.gate; const decision=req.params.decision;
+  if(!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const rows=await sql\`select issue_number from factory_runs where id=\${req.params.runId} and tenant_id=\${tenant} limit 1\`;
+  const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  const issueNumber=Number(run.issue_number);
   const feedback=typeof req.body?.feedback==='string'?req.body.feedback.trim():'';
   if(decision==='changes'&&!feedback){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Feedback is required.'}});return}
-  const body=decision==='approve'?`FACTORY_HUMAN_GATE_APPROVED ${gate}`:`FACTORY_HUMAN_GATE_CHANGES ${gate}\n\n${feedback}`;
-  await github(`/issues/${match[1]}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
+  const body=decision==='approve'?\`FACTORY_HUMAN_GATE_APPROVED \${gate}\`:\`FACTORY_HUMAN_GATE_CHANGES \${gate}\\n\\n\${feedback}\`;
+  await github(\`/issues/\${issueNumber}/comments\`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body})});
   const recordedAt=new Date().toISOString();
   if(gate==='design') await persistBrain(tenant,req.params.runId,'approved_designs',{decision,feedback:feedback||null,recordedAt,source:'product-owner-gate'});
   if(gate==='production') await persistBrain(tenant,req.params.runId,'deployment_history',{decision,feedback:feedback||null,recordedAt,source:'product-owner-gate',status:decision==='approve'?'production-approved':'changes-requested'});
