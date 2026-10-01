@@ -19,6 +19,8 @@ jobs:
       TARGET_COMMIT: ${{ github.event.client_payload.commit }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
+      RAILWAY_PROJECT_ID: ${{ github.event.client_payload.railwayProjectId }}
+      RAILWAY_SERVICE_ID: ${{ github.event.client_payload.railwayServiceId }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,6 +34,8 @@ jobs:
           test -n "$TARGET_COMMIT"
           test -n "$SOURCE_ISSUE"
           test -n "$RUN_ID"
+          test -n "$RAILWAY_PROJECT_ID"
+          test -n "$RAILWAY_SERVICE_ID"
       - name: Checkout exact verified customer commit
         env:
           GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
@@ -43,10 +47,17 @@ jobs:
           test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
       - name: Install Railway CLI
         run: npm install --global @railway/cli
-      - name: Deploy exact customer revision
+      - name: Deploy exact customer revision with bounded retries
         working-directory: /tmp/customer-deploy
         run: |
-          railway up -y
+          railway link --project "$RAILWAY_PROJECT_ID" --service "$RAILWAY_SERVICE_ID"
+          success=0
+          for attempt in 1 2 3; do
+            echo "Railway deploy attempt $attempt/3"
+            if railway up -y; then success=1; break; fi
+            sleep $((attempt * 10))
+          done
+          test "$success" = "1"
           DOMAIN_OUTPUT="$(railway domain 2>&1 || railway domain list 2>&1)"
           printf '%s\n' "$DOMAIN_OUTPUT"
           LIVE_HOST="$(printf '%s\n' "$DOMAIN_OUTPUT" | grep -Eo '[A-Za-z0-9.-]+\.up\.railway\.app' | head -1)"
@@ -74,6 +85,8 @@ jobs:
           Verified-Commit: $TARGET_COMMIT
           Provider: railway
           URL: $LIVE_URL
+          Railway-Project: $RAILWAY_PROJECT_ID
+          Railway-Service: $RAILWAY_SERVICE_ID
           Deployment workflow: $GITHUB_RUN_ID"
       - name: Record deployment failure
         if: failure()
@@ -84,4 +97,7 @@ jobs:
           Commit: $TARGET_COMMIT
           Provider: railway
           Deployment workflow: $GITHUB_RUN_ID
+          Railway-Project: $RAILWAY_PROJECT_ID
+          Railway-Service: $RAILWAY_SERVICE_ID
+          Failure-Diagnostics: workflow=$GITHUB_RUN_ID;attempt=$GITHUB_RUN_ATTEMPT;commit=$TARGET_COMMIT
           No Live evidence was recorded."
