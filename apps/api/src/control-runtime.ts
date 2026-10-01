@@ -363,7 +363,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const tenant=requireTenant(req,res); if(!tenant)return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
-  const productName=cleanName(intent); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName)}`;
+  const productName=cleanName(intent); const repositorySuffix=randomBytes(4).toString('hex'); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName).slice(0,44)}-${repositorySuffix}`;
   let targetRepository=`alnatourm/${repoName}`;
   const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
   if(repoCheck.status===404){
