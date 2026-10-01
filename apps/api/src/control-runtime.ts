@@ -151,7 +151,7 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
   const memberships=await sql`select id,tenant_id from memberships where user_id=${userId} order by created_at asc,id asc limit 1`;
   if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
   const raw=randomBytes(32).toString('base64url'); const hash=createHash('sha256').update(raw).digest('hex'); const sessionId=randomUUID(); const expiresAt=new Date(Date.now()+sessionTtlMs);
-  await sql`insert into sessions(id,user_id,token_hash,expires_at) values(${sessionId},${userId},${hash},${expiresAt})`;
+  await sql`insert into sessions(id,user_id,token_hash,expires_at) values(${sessionId},${userId},${hash},${expiresAt.toISOString()})`;
   res.json({data:{token:raw,userId,tenantId:String(memberships[0].tenant_id),membershipId:String(memberships[0].id),expiresAt:expiresAt.toISOString()}});
  }catch(e){next(e)}
 });
