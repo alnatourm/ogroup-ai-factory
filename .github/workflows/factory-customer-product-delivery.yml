@@ -14,13 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      TARGET_GITHUB_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
       TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
       TENANT_ID: ${{ github.event.client_payload.tenant }}
-      FACTORY_CONTROL_API_URL: ${{ secrets.FACTORY_CONTROL_API_URL }}
-      FACTORY_CALLBACK_TOKEN: ${{ secrets.FACTORY_CALLBACK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,19 +25,26 @@ jobs:
           node-version: 22
       - name: Require delivery context
         run: |
-          test -n "$TARGET_GITHUB_TOKEN"
           test -n "$TARGET_REPOSITORY"
           test -n "$SOURCE_ISSUE"
           test -n "$RUN_ID"
-      - name: Clone customer repository
+      - name: Clone customer repository without persistent credentials
         env:
           GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
-        run: gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
+        run: |
+          gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
+          git -C /tmp/customer-product config --unset-all http.https://github.com/.extraheader || true
+          git -C /tmp/customer-product remote set-url origin "https://github.com/$TARGET_REPOSITORY.git"
       - name: Apply generated product payload
         run: node scripts/apply-customer-build-result.mjs /tmp/customer-product
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REPOSITORY: ${{ github.repository }}
+      - name: Remove Factory credentials before untrusted verification
+        run: |
+          unset GH_TOKEN
+          git -C /tmp/customer-product config --unset-all http.https://github.com/.extraheader || true
+          git -C /tmp/customer-product config --get-regexp 'http\..*extraheader' && exit 1 || true
       - name: Verify customer product
         working-directory: /tmp/customer-product
         shell: bash
@@ -77,8 +81,10 @@ jobs:
           git commit -m "build: verified customer product $RUN_ID"
           git push origin HEAD:main
       - name: Persist verified testing evidence
-        if: env.FACTORY_CONTROL_API_URL != '' && env.FACTORY_CALLBACK_TOKEN != '' && env.TENANT_ID != ''
         working-directory: /tmp/customer-product
+        env:
+          FACTORY_CONTROL_API_URL: ${{ secrets.FACTORY_CONTROL_API_URL }}
+          FACTORY_CALLBACK_TOKEN: ${{ secrets.FACTORY_CALLBACK_TOKEN }}
         run: node "$GITHUB_WORKSPACE/scripts/report-customer-evidence.mjs"
       - name: Request verified deployment
         if: success()
