@@ -17,6 +17,18 @@ const sessionTtlMs = 7*24*60*60*1000;
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
 
+async function ensureCoreIdentitySchema(){
+ if(!sql)return;
+ await sql.unsafe("create table if not exists organizations(id uuid primary key,name text not null,created_at timestamptz not null default now(),updated_at timestamptz not null default now())");
+ await sql.unsafe("create table if not exists users(id uuid primary key,email text not null,display_name text,created_at timestamptz not null default now(),updated_at timestamptz not null default now())");
+ await sql.unsafe("create unique index if not exists users_email_unique on users(email)");
+ await sql.unsafe("create table if not exists memberships(id uuid primary key,tenant_id uuid not null references organizations(id) on delete cascade,user_id uuid not null references users(id) on delete cascade,created_at timestamptz not null default now())");
+ await sql.unsafe("create unique index if not exists memberships_tenant_user_unique on memberships(tenant_id,user_id)");
+ await sql.unsafe("create table if not exists sessions(id uuid primary key,user_id uuid not null references users(id) on delete cascade,token_hash text not null,expires_at timestamptz not null,revoked_at timestamptz,created_at timestamptz not null default now(),last_seen_at timestamptz)");
+ await sql.unsafe("create unique index if not exists sessions_token_hash_unique on sessions(token_hash)");
+}
+void ensureCoreIdentitySchema().catch((error)=>console.error('IDENTITY_SCHEMA_BOOTSTRAP_FAILED',error));
+
 async function github(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
     ...init,
