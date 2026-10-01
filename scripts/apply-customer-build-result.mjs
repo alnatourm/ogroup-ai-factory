@@ -31,7 +31,11 @@ if(!Array.isArray(payload.files)||payload.files.length===0||payload.files.length
 let totalBytes=0;
 for(const file of payload.files){
   const p=String(file.path||'').replaceAll('\\','/');
-  if(!p||p.includes('..')||p.startsWith('/')||p.startsWith('.github/')||p.startsWith('factory-evidence/')||p==='.env'||p.startsWith('.env.')) throw new Error(`FACTORY_RESULT_UNSAFE_PATH: ${p}`);
+  const lower=p.toLowerCase();
+  const segments=lower.split('/');
+  const sensitiveName=segments.some((segment)=>segment==='.env'||segment.startsWith('.env.')||segment==='.npmrc'||segment==='.pypirc'||segment==='.netrc'||segment==='credentials'||segment==='credentials.json'||segment==='service-account.json'||segment==='id_rsa'||segment==='id_ed25519'||segment.endsWith('.pem')||segment.endsWith('.key')||segment.endsWith('.p12')||segment.endsWith('.pfx'));
+  const sensitiveDir=segments.some((segment)=>segment==='.ssh'||segment==='.aws'||segment==='.config/gcloud');
+  if(!p||p.includes('..')||p.startsWith('/')||lower.startsWith('.github/')||lower.startsWith('factory-evidence/')||sensitiveName||sensitiveDir) throw new Error(`FACTORY_RESULT_UNSAFE_PATH: ${p}`);
   if(typeof file.content!=='string') throw new Error(`FACTORY_RESULT_INVALID_CONTENT: ${p}`);
   const bytes=Buffer.byteLength(file.content,'utf8'); totalBytes+=bytes;
   if(bytes>1_000_000||totalBytes>10_000_000) throw new Error('FACTORY_RESULT_CONTENT_LIMIT_EXCEEDED');
