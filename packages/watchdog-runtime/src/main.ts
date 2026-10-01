@@ -232,7 +232,7 @@ async function completeFactoryIssue(issueNumber: number, runId: string, target: 
 
 async function setFactoryStatus(issueNumber: number, status: 'running'|'verifying'|'waiting-dependency'|'waiting-human'|'completed'): Promise<void> {
   const response = await github(`/issues/${issueNumber}`);
-  void await response.json() as FactoryIssue;
+  const issue = await response.json() as FactoryIssue;
   const labels = (issue.labels ?? []).map((label) => label.name).filter((name): name is string => Boolean(name)).filter((name) => !name.startsWith('factory-status:'));
   labels.push('factory-work', `factory-status:${status}`);
   await github(`/issues/${issueNumber}/labels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ labels: [...new Set(labels)] }) });
@@ -265,8 +265,7 @@ const recovery: WatchdogRecoveryPort = {
     if (!canRecover(runId)) return;
     if (runId.startsWith('factory-work:')) {
       const issueNumber = Number(runId.split(':')[1]);
-      const response = await github(`/issues/${issueNumber}`);
-      void await response.json() as FactoryIssue;
+      await github(`/issues/${issueNumber}`);
       const trustedRun = await trustedRunMetadata(runId);
       if (trustedRun.issueNumber !== issueNumber) throw new Error('FACTORY_RUN_ISSUE_MISMATCH');
       const target = trustedRun.targetRepository;
