@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS factory_byok_vault (
   ciphertext text NOT NULL,
   iv text NOT NULL,
   tag text NOT NULL,
+  key_version integer NOT NULL DEFAULT 1 CHECK (key_version > 0),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(tenant_id,credential_ref)
 );
