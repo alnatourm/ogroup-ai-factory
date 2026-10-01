@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS role_permissions (
  permission_id uuid NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
  UNIQUE(role_id,permission_id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS memberships_id_tenant_unique ON memberships(id,tenant_id);
+
 CREATE TABLE IF NOT EXISTS user_roles (
  membership_id uuid NOT NULL,
  role_id uuid NOT NULL,
