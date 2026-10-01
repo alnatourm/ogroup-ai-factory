@@ -25,3 +25,13 @@ CREATE TABLE IF NOT EXISTS external_identities (
  PRIMARY KEY(provider,subject)
 );
 CREATE INDEX IF NOT EXISTS external_identities_user_idx ON external_identities(user_id);
+
+CREATE TABLE IF NOT EXISTS factory_runtime_brain (
+ tenant_id text NOT NULL,
+ run_id text NOT NULL,
+ section text NOT NULL,
+ content_json text NOT NULL DEFAULT 'null',
+ version integer NOT NULL DEFAULT 1,
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY (tenant_id,run_id,section)
+);
