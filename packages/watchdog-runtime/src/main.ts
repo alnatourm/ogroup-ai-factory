@@ -189,6 +189,17 @@ const state: WatchdogStatePort = {
   },
 };
 
+
+interface TrustedRunMetadata { id:string; tenantId:string; issueNumber:number; name:string; intent:string; targetRepository:string }
+async function trustedRunMetadata(runId:string):Promise<TrustedRunMetadata>{
+  if(!controlApiUrl||!controlApiKey) throw new Error('FACTORY_RUN_METADATA_API_NOT_CONFIGURED');
+  const response=await fetch(\`${controlApiUrl.replace(/\\\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}\`,{headers:{'x-factory-control-key':controlApiKey}});
+  if(!response.ok) throw new Error(\`FACTORY_RUN_METADATA_${response.status}\`);
+  const payload=await response.json() as {data:TrustedRunMetadata};
+  if(!payload.data?.targetRepository||!payload.data?.tenantId) throw new Error('FACTORY_RUN_METADATA_INVALID');
+  return payload.data;
+}
+
 function targetRepository(issue: FactoryIssue): string | null {
   const body = issue.body ?? '';
   const canonical = body.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
@@ -287,7 +298,9 @@ const recovery: WatchdogRecoveryPort = {
       const issueNumber = Number(runId.split(':')[1]);
       const response = await github(`/issues/${issueNumber}`);
       const issue = await response.json() as FactoryIssue;
-      const target = targetRepository(issue);
+      const trustedRun = await trustedRunMetadata(runId);
+      if (trustedRun.issueNumber !== issueNumber) throw new Error('FACTORY_RUN_ISSUE_MISMATCH');
+      const target = trustedRun.targetRepository;
       if (!target) throw new Error(`FACTORY_TARGET_REPOSITORY_REQUIRED_${issueNumber}`);
       if (target === repository) throw new Error(`FACTORY_TARGET_REPOSITORY_MUST_DIFFER_FROM_SUPERVISOR_${issueNumber}`);
       console.log(JSON.stringify({ type: 'WATCHDOG_TARGET_RESOLVED', runId, issueNumber, target, at: new Date().toISOString() }));
@@ -312,7 +325,7 @@ const recovery: WatchdogRecoveryPort = {
               console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: Boolean(request), started: hasDeploymentStarted(comments,runId), at: new Date().toISOString() }));
               return;
             }
-            await persistDeploymentProof(runId, tenantFromIssue(issue), target, proof, deploymentRequestCommit(comments,runId));
+            await persistDeploymentProof(runId, trustedRun.tenantId, target, proof, deploymentRequestCommit(comments,runId));
           }
           await completeFactoryIssue(issueNumber, runId, target);
           return;
@@ -337,12 +350,12 @@ const recovery: WatchdogRecoveryPort = {
               }
               const repairDiagnostics=latestRepairDiagnostics(comments,runId);
               await setFactoryStatus(issueNumber,'running');
-              await dispatch('factory-antigravity-build',{runId,sourceRepository:repository,sourceIssue:issueNumber,targetRepository:target,buildSlice:sliceId,productIntent:productIntent(issue),repairDiagnostics});
+              await dispatch('factory-antigravity-build',{runId,sourceRepository:repository,sourceIssue:issueNumber,targetRepository:target,buildSlice:sliceId,productIntent:trustedRun.intent,repairDiagnostics});
               console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_REPAIR_DISPATCHED', runId, target, failures: delivery.failures, diagnostics: Boolean(repairDiagnostics), at: new Date().toISOString() }));
               return;
             }
             await github(`/issues/${issueNumber}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: `FACTORY_CUSTOMER_DELIVERY_STARTED ${runId}` }) });
-            await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: tenantFromIssue(issue) });
+            await dispatch('factory-customer-deliver', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, tenant: trustedRun.tenantId });
             console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-customer-deliver', runId, sliceId, target, at: new Date().toISOString() }));
           } else {
             await dispatchTo(target, 'factory-work-execute', { runId, sourceRepository: repository, sourceIssue: issueNumber, buildSlice: sliceId });
@@ -350,7 +363,7 @@ const recovery: WatchdogRecoveryPort = {
           }
         } else if (!(await hasActiveAntigravityBuild(runId))) {
           await setFactoryStatus(issueNumber, 'waiting-dependency');
-          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, productIntent: productIntent(issue) });
+          await dispatch('factory-antigravity-build', { runId, sourceRepository: repository, sourceIssue: issueNumber, targetRepository: target, buildSlice: sliceId, productIntent: trustedRun.intent });
           console.log(JSON.stringify({ type: 'WATCHDOG_DISPATCH_SENT', destination: repository, eventType: 'factory-antigravity-build', runId, sliceId, target, at: new Date().toISOString() }));
         }
         return;
