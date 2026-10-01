@@ -177,7 +177,6 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
 const byokMasterKey=process.env.FACTORY_BYOK_MASTER_KEY?.trim()??'';
 function vaultKey(){if(!byokMasterKey)throw new Error('BYOK_VAULT_NOT_CONFIGURED');return createHash('sha256').update(byokMasterKey).digest()}
 function encryptSecret(secret:string){const iv=randomBytes(12);const cipher=createCipheriv('aes-256-gcm',vaultKey(),iv);const encrypted=Buffer.concat([cipher.update(secret,'utf8'),cipher.final()]);const tag=cipher.getAuthTag();return {ciphertext:encrypted.toString('base64'),iv:iv.toString('base64'),tag:tag.toString('base64')}}
-async function ensureVaultTable(){if(!sql)return;await sql`create table if not exists factory_byok_vault (tenant_id text not null, credential_ref text not null, provider text not null, ciphertext text not null, iv text not null, tag text not null, updated_at timestamptz not null default now(), primary key(tenant_id,credential_ref))`}
 app.put('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const credentialRef=req.params.credentialRef.trim();const provider=typeof req.body?.provider==='string'?req.body.provider.trim():'';const secret=typeof req.body?.secret==='string'?req.body.secret.trim():'';if(!credentialRef||!provider||secret.length<8){res.status(400).json({error:{code:'INVALID_BYOK_CREDENTIAL'}});return}const enc=encryptSecret(secret);await sql`insert into factory_byok_vault(tenant_id,credential_ref,provider,ciphertext,iv,tag,updated_at) values(${tenant},${credentialRef},${provider},${enc.ciphertext},${enc.iv},${enc.tag},now()) on conflict(tenant_id,credential_ref) do update set provider=excluded.provider,ciphertext=excluded.ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=now()`;res.json({data:{credentialRef,provider,configured:true},meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
 app.get('/api/v1/factory/byok',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const rows=await sql`select credential_ref,provider,updated_at from factory_byok_vault where tenant_id=${tenant} order by updated_at desc`;res.json({data:rows.map(r=>({credentialRef:String(r.credential_ref),provider:String(r.provider),configured:true,updatedAt:new Date(r.updated_at as string).toISOString()})),meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
 app.delete('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}await sql`delete from factory_byok_vault where tenant_id=${tenant} and credential_ref=${req.params.credentialRef}`;res.status(204).send()}catch(e){next(e)}});
@@ -192,14 +191,6 @@ const factoryConfigs=new Map<string,FactoryConfig>();
 function configFor(tenant:string):FactoryConfig {
  const existing=factoryConfigs.get(tenant); if(existing)return existing;
  const initial:FactoryConfig={mode:'managed',providers:[],models:[],agents:[],roles:[]}; factoryConfigs.set(tenant,initial); return initial;
-}
-async function ensureConfigTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_config (
-  tenant_id text primary key,
-  config_json text not null,
-  updated_at timestamptz not null default now()
- )`;
 }
 async function loadConfig(tenant:string):Promise<FactoryConfig>{
  if(!sql)return configFor(tenant);
@@ -237,22 +228,6 @@ app.put('/api/v1/factory/config',async(req,res)=>{
 
 type UsageSource='ogroup'|'customer';
 interface RuntimeUsageEvent { projectId?:string; source:UsageSource; provider?:string; model?:string; inputTokens:number; outputTokens:number; costMicros:number; occurredAt:string }
-async function ensureUsageTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_usage (
-  id bigserial primary key,
-  tenant_id text not null,
-  project_id text,
-  source text not null check (source in ('ogroup','customer')),
-  provider text,
-  model text,
-  input_tokens integer not null default 0 check (input_tokens >= 0),
-  output_tokens integer not null default 0 check (output_tokens >= 0),
-  cost_micros bigint not null default 0 check (cost_micros >= 0),
-  occurred_at timestamptz not null default now()
- )`;
- await sql`create index if not exists factory_runtime_usage_tenant_time on factory_runtime_usage (tenant_id,occurred_at desc)`;
-}
 app.get('/api/v1/factory/usage',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res);if(!tenant)return;
@@ -291,18 +266,6 @@ type BrainSection=typeof BRAIN_SECTIONS[number];
 interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
 const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
-async function ensureBrainTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_brain (
-  tenant_id text not null,
-  run_id text not null,
-  section text not null,
-  content_json text not null default 'null',
-  version integer not null default 1,
-  updated_at timestamptz not null default now(),
-  primary key (tenant_id, run_id, section)
- )`;
-}
 async function loadBrain(tenant:string,runId:string){
  if(!sql)return projectBrains.get(brainKey(tenant,runId));
  const rows=await sql`select section,content_json,version,updated_at from factory_runtime_brain where tenant_id=${tenant} and run_id=${runId}`;
