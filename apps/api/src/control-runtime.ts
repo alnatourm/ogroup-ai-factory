@@ -248,6 +248,7 @@ app.post('/api/v1/factory/usage',async(req,res,next)=>{
   const inputTokens=Number(body.inputTokens??0),outputTokens=Number(body.outputTokens??0),costMicros=Number(body.costMicros??0);
   if((source!=='ogroup'&&source!=='customer')||![inputTokens,outputTokens,costMicros].every(Number.isFinite)||[inputTokens,outputTokens,costMicros].some(x=>x<0)){res.status(400).json({error:{code:'INVALID_USAGE_EVENT'}});return}
   const occurredAt=body.occurredAt?new Date(body.occurredAt):new Date(); if(Number.isNaN(occurredAt.getTime())){res.status(400).json({error:{code:'INVALID_USAGE_TIME'}});return}
+  if(costMicros>0&&!(await reserveAiUsage(tenant,costMicros))){res.status(429).json({error:{code:'AI_USAGE_QUOTA_EXCEEDED'}});return}
   await sql`insert into factory_runtime_usage (tenant_id,project_id,source,provider,model,input_tokens,output_tokens,cost_micros,occurred_at) values (${tenant},${body.projectId??null},${source},${body.provider??null},${body.model??null},${inputTokens},${outputTokens},${costMicros},${occurredAt})`;
   res.status(201).json({data:{recorded:true},meta:{source:'postgres'}});
  }catch(e){next(e)}
@@ -329,6 +330,24 @@ app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
+async function reserveProjectQuota(tenant:string):Promise<{ok:true;periodKey:string}|{ok:false;code:string}>{
+ if(!sql)return {ok:false,code:'COMMERCIAL_DATABASE_REQUIRED'};
+ const periodKey=new Date().toISOString().slice(0,7);
+ return sql.begin(async tx=>{
+  const rows=await tx.unsafe("select p.included_projects from factory_subscriptions s join factory_plans p on p.id=s.plan_id where s.tenant_id=$1 and s.status='active' for update",[tenant]);
+  if(!rows[0])return {ok:false,code:'ACTIVE_SUBSCRIPTION_REQUIRED'};
+  const limit=Number(rows[0].included_projects);
+  await tx.unsafe("insert into factory_quota_counters(tenant_id,period_key,projects_created,ai_cost_micros) values($1,$2,0,0) on conflict(tenant_id,period_key) do nothing",[tenant,periodKey]);
+  const updated=await tx.unsafe("update factory_quota_counters set projects_created=projects_created+1,updated_at=now() where tenant_id=$1 and period_key=$2 and projects_created < $3 returning projects_created",[tenant,periodKey,limit]);
+  return updated[0]?{ok:true as const,periodKey}:{ok:false as const,code:'PROJECT_QUOTA_EXCEEDED'};
+ });
+}
+async function releaseProjectQuota(tenant:string,periodKey:string){if(!sql)return;await sql`update factory_quota_counters set projects_created=greatest(projects_created-1,0),updated_at=now() where tenant_id=${tenant} and period_key=${periodKey}`}
+async function reserveAiUsage(tenant:string,costMicros:number):Promise<boolean>{
+ if(!sql)return false; const periodKey=new Date().toISOString().slice(0,7);
+ return sql.begin(async tx=>{const rows=await tx.unsafe("select p.included_ai_cost_micros from factory_subscriptions s join factory_plans p on p.id=s.plan_id where s.tenant_id=$1 and s.status='active' for update",[tenant]);if(!rows[0])return false;const limit=Number(rows[0].included_ai_cost_micros);await tx.unsafe("insert into factory_quota_counters(tenant_id,period_key,projects_created,ai_cost_micros) values($1,$2,0,0) on conflict(tenant_id,period_key) do nothing",[tenant,periodKey]);const updated=await tx.unsafe("update factory_quota_counters set ai_cost_micros=ai_cost_micros+$3,updated_at=now() where tenant_id=$1 and period_key=$2 and ai_cost_micros+$3 <= $4 returning ai_cost_micros",[tenant,periodKey,costMicros,limit]);return Boolean(updated[0])});
+}
+
 app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res); if(!tenant)return; if(!(await requirePermission(req,res,'factory.run.create')))return;
@@ -337,6 +356,9 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   if(idempotencyKey.length>128){res.status(400).json({error:{code:'INVALID_IDEMPOTENCY_KEY'}});return}
   if(idempotencyKey&&sql){const existing=await sql`select id,name,target_repository from factory_runs where tenant_id=${tenant} and idempotency_key=${idempotencyKey} limit 1`;if(existing[0]){res.status(200).json({data:{runId:String(existing[0].id),name:String(existing[0].name),targetRepository:String(existing[0].target_repository),status:'EXISTING'},meta:{idempotentReplay:true}});return}}
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
+  const quota=await reserveProjectQuota(tenant);if(!quota.ok){res.status(quota.code==='PROJECT_QUOTA_EXCEEDED'?429:402).json({error:{code:quota.code}});return}
+  let quotaCommitted=false;
+  try{
   const productName=cleanName(intent); const repositorySuffix=randomBytes(4).toString('hex'); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName).slice(0,44)}-${repositorySuffix}`;
   let targetRepository=`alnatourm/${repoName}`;
   const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
@@ -354,7 +376,8 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
   await persistBrain(tenant,runId,'requirements',intake);
   await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
-  res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
+  quotaCommitted=true;res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
+  }finally{if(!quotaCommitted)await releaseProjectQuota(tenant,quota.periodKey)}
  }catch(e){next(e)}
 });
 
