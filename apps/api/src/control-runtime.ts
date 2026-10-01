@@ -10,6 +10,8 @@ const db=sql?drizzle(sql):null;
 const repository = process.env.FACTORY_REPOSITORY ?? 'alnatourm/ogroup-ai-factory';
 const controlApiKey = process.env.FACTORY_CONTROL_API_KEY?.trim() ?? '';
 const authRequired = process.env.FACTORY_REQUIRE_AUTH === 'true';
+const productionRuntime = (process.env.NODE_ENV ?? 'production') === 'production';
+if (productionRuntime && !authRequired) throw new Error('FACTORY_REQUIRE_AUTH_MUST_BE_TRUE_IN_PRODUCTION');
 const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
@@ -375,7 +377,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
-app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
+app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
 
 app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
  try{
