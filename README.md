@@ -287,3 +287,19 @@ The SaaS is **not production-accepted** until these are implemented and verified
 
 ### Acceptance rule
 A run is not complete because a workflow is green. Completion requires tenant-safe durable state, verified artifacts, authorized human gates, exact-commit verification, successful deployment, public live proof, and persisted evidence.
+
+
+## Direct Builder completion update - 2026-10-01
+
+Latest directly implemented hardening:
+- Production migrations now baseline the legacy runtime schema safely and repair the tenant-bound membership key required by RBAC. The control API and persistence smoke both reached Railway SUCCESS after the repair.
+- Sensitive Factory APIs enforce explicit tenant membership permissions for run creation, human gates, configuration, BYOK, billing visibility and workspace administration.
+- Commercial project and AI usage quotas are reserved atomically in PostgreSQL. No pricing was invented.
+- BYOK supports versioned authenticated encryption, server-side decrypt/use and provider connection testing without returning customer secrets to the browser.
+- Customer generated-code verification is isolated from privileged delivery: untrusted npm/pip/test/build receives no target repository write token, Factory callback secret or Railway deployment credential. Node verification requires a committed lockfile.
+- Railway customer deployment is bound to an explicit project/service and exact verified commit, has a three-attempt cap, public live verification and durable failure diagnostics.
+- Internal execution evidence callbacks are scoped and HMAC-signed with a five-minute replay window rather than sending the broad control key header.
+- Dashboard Settings is connected to live tenant memberships, roles and invitation records; Usage & Billing is connected to live commercial APIs.
+- Persistence smoke Railway variables are wired through Railway references rather than copied secret values.
+
+Production acceptance remains evidence-driven. Do not call the SaaS complete until the current exact Factory and Dashboard main SHAs both reach Railway SUCCESS and the disposable Build For Me and safe Build With My AI journeys produce durable live deployment evidence.
