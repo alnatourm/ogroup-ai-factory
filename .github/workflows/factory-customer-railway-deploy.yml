@@ -1,0 +1,87 @@
+name: Customer Railway Deployment
+
+on:
+  repository_dispatch:
+    types: [factory-customer-deploy]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RAILWAY_API_TOKEN: ${{ secrets.FACTORY_RAILWAY_API_TOKEN }}
+      TARGET_GITHUB_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
+      TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
+      TARGET_COMMIT: ${{ github.event.client_payload.commit }}
+      SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
+      RUN_ID: ${{ github.event.client_payload.runId }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Require deployment credentials and immutable request
+        run: |
+          test -n "$RAILWAY_API_TOKEN"
+          test -n "$TARGET_GITHUB_TOKEN"
+          test -n "$TARGET_REPOSITORY"
+          test -n "$TARGET_COMMIT"
+          test -n "$SOURCE_ISSUE"
+          test -n "$RUN_ID"
+      - name: Checkout exact verified customer commit
+        env:
+          GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
+        run: |
+          gh repo clone "$TARGET_REPOSITORY" /tmp/customer-deploy
+          cd /tmp/customer-deploy
+          git fetch origin "$TARGET_COMMIT" --depth=1
+          git checkout --detach "$TARGET_COMMIT"
+          test "$(git rev-parse HEAD)" = "$TARGET_COMMIT"
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli
+      - name: Deploy exact customer revision
+        working-directory: /tmp/customer-deploy
+        run: |
+          railway up -y
+          DOMAIN_OUTPUT="$(railway domain 2>&1 || railway domain list 2>&1)"
+          printf '%s\n' "$DOMAIN_OUTPUT"
+          LIVE_HOST="$(printf '%s\n' "$DOMAIN_OUTPUT" | grep -Eo '[A-Za-z0-9.-]+\.up\.railway\.app' | head -1)"
+          test -n "$LIVE_HOST"
+          echo "LIVE_URL=https://$LIVE_HOST" >> "$GITHUB_ENV"
+      - name: Verify public deployment
+        run: |
+          for attempt in $(seq 1 30); do
+            STATUS="$(curl -L -sS -o /tmp/live-body -w '%{http_code}' --max-time 15 "$LIVE_URL" || true)"
+            if [ "$STATUS" -ge 200 ] 2>/dev/null && [ "$STATUS" -lt 500 ] 2>/dev/null; then
+              echo "Verified $LIVE_URL with HTTP $STATUS"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "Public deployment did not become healthy"
+          exit 1
+      - name: Record verified deployment proof
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_DEPLOYMENT_VERIFIED $RUN_ID
+          Commit: $TARGET_COMMIT
+          Verified-Commit: $TARGET_COMMIT
+          Provider: railway
+          URL: $LIVE_URL
+          Deployment workflow: $GITHUB_RUN_ID"
+      - name: Record deployment failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_DEPLOYMENT_FAILED $RUN_ID
+          Commit: $TARGET_COMMIT
+          Provider: railway
+          Deployment workflow: $GITHUB_RUN_ID
+          No Live evidence was recorded."
