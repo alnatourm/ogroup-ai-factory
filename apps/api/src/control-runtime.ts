@@ -2,6 +2,7 @@ import express from 'express';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual, randomBytes, randomUUID } from 'node:crypto';
+// signed callback primitives are intentionally server-only
 
 const databaseUrl=process.env.DATABASE_URL?.trim()??'';
 const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
