@@ -2,19 +2,119 @@ name: Factory Customer Product Delivery
 
 on:
   repository_dispatch:
-    types:
-      - factory-customer-deliver
+    types: [factory-customer-deliver]
 
 permissions:
   contents: read
-  issues: write
 
 jobs:
-  deliver:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+    outputs:
+      artifact-name: ${{ steps.meta.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Require delivery context
+        env:
+          TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
+          SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
+          RUN_ID: ${{ github.event.client_payload.runId }}
+        run: |
+          test -n "$TARGET_REPOSITORY"
+          test -n "$SOURCE_ISSUE"
+          test -n "$RUN_ID"
+      - name: Clone customer repository read-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
+        run: gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
+      - name: Apply generated product payload
+        run: node scripts/apply-customer-build-result.mjs /tmp/customer-product
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
+      - id: meta
+        run: echo "artifact=customer-source-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+      - name: Package source without git credentials
+        run: rm -rf /tmp/customer-product/.git && tar -C /tmp/customer-product -czf /tmp/customer-source.tgz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: /tmp/customer-source.tgz
+          retention-days: 1
+
+  verify:
+    needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.prepare.outputs.artifact-name }}
+          path: /tmp/input
+      - name: Unpack untrusted source
+        run: mkdir -p /tmp/customer-product && tar -C /tmp/customer-product -xzf /tmp/input/customer-source.tgz
+      - name: Verify customer product without privileged credentials
+        working-directory: /tmp/customer-product
+        shell: bash
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          FACTORY_CALLBACK_TOKEN: ""
+          FACTORY_RAILWAY_API_TOKEN: ""
+          FACTORY_TARGET_GITHUB_TOKEN: ""
+        run: |
+          set -o pipefail
+          exec > >(tee /tmp/customer-verification.log) 2>&1
+          if [ -f package.json ]; then
+            test -f package-lock.json || { echo "Node product must include package-lock.json"; exit 1; }
+            npm ci --ignore-scripts
+            npm run lint --if-present
+            npm run typecheck --if-present
+            npm test --if-present
+            npm run build --if-present
+            printf 'node\ndependencies,lint-if-present,typecheck-if-present,test-if-present,build-if-present\n' >/tmp/verification-meta
+          elif [ -f pyproject.toml ] || [ -f requirements.txt ]; then
+            python -m compileall -q .
+            if [ -f requirements.txt ]; then python -m pip install --disable-pip-version-check -r requirements.txt; fi
+            if [ -d tests ]; then python -m pytest -q; fi
+            printf 'python\ncompileall,dependencies-if-present,pytest-if-present\n' >/tmp/verification-meta
+          else
+            echo "Unsupported customer product"; exit 1
+          fi
+      - name: Package verified source and evidence
+        if: success()
+        run: |
+          tar -C /tmp/customer-product -czf /tmp/verified-source.tgz .
+          cp /tmp/customer-verification.log /tmp/verification.log
+          cp /tmp/verification-meta /tmp/verification-meta.txt
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: verified-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/verified-source.tgz
+            /tmp/verification.log
+            /tmp/verification-meta.txt
+          retention-days: 1
+
+  deliver:
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      issues: write
     env:
-      TARGET_GITHUB_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
       TARGET_REPOSITORY: ${{ github.event.client_payload.targetRepository }}
       SOURCE_ISSUE: ${{ github.event.client_payload.sourceIssue }}
       RUN_ID: ${{ github.event.client_payload.runId }}
@@ -23,49 +123,19 @@ jobs:
       FACTORY_CALLBACK_TOKEN: ${{ secrets.FACTORY_CALLBACK_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/download-artifact@v4
         with:
-          node-version: 22
-      - name: Require delivery context
-        run: |
-          test -n "$TARGET_GITHUB_TOKEN"
-          test -n "$TARGET_REPOSITORY"
-          test -n "$SOURCE_ISSUE"
-          test -n "$RUN_ID"
-      - name: Clone customer repository
+          name: verified-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/verified
+      - name: Clone trusted delivery target
         env:
           GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
         run: gh repo clone "$TARGET_REPOSITORY" /tmp/customer-product
-      - name: Apply generated product payload
-        run: node scripts/apply-customer-build-result.mjs /tmp/customer-product
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SOURCE_REPOSITORY: ${{ github.repository }}
-      - name: Verify customer product
-        working-directory: /tmp/customer-product
-        shell: bash
+      - name: Replace working tree with verified artifact
         run: |
-          set -o pipefail
-          exec > >(tee /tmp/customer-verification.log) 2>&1
-          if [ -f package.json ]; then
-            if [ -f package-lock.json ]; then npm ci; else npm install; fi
-            echo "VERIFIED_STACK=node" >> "$GITHUB_ENV"
-            echo "VERIFIED_CHECKS=dependencies,lint-if-present,typecheck-if-present,test-if-present,build-if-present" >> "$GITHUB_ENV"
-            npm run lint --if-present
-            npm run typecheck --if-present
-            npm test --if-present
-            npm run build --if-present
-          elif [ -f pyproject.toml ] || [ -f requirements.txt ]; then
-            echo "VERIFIED_STACK=python" >> "$GITHUB_ENV"
-            echo "VERIFIED_CHECKS=compileall,dependencies-if-present,pytest-if-present" >> "$GITHUB_ENV"
-            python -m compileall -q .
-            if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
-            if [ -d tests ]; then python -m pytest -q; fi
-          else
-            echo "Unsupported customer product: no package.json, pyproject.toml, or requirements.txt"
-            exit 1
-          fi
-      - name: Commit verified product
+          find /tmp/customer-product -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          tar -C /tmp/customer-product -xzf /tmp/verified/verified-source.tgz
+      - name: Commit exact verified artifact
         env:
           GH_TOKEN: ${{ secrets.FACTORY_TARGET_GITHUB_TOKEN }}
         working-directory: /tmp/customer-product
@@ -76,36 +146,21 @@ jobs:
           git diff --cached --quiet && { echo "No implementation change"; exit 1; }
           git commit -m "build: verified customer product $RUN_ID"
           git push origin HEAD:main
+          echo "VERIFIED_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
       - name: Persist verified testing evidence
         if: env.FACTORY_CONTROL_API_URL != '' && env.FACTORY_CALLBACK_TOKEN != '' && env.TENANT_ID != ''
         working-directory: /tmp/customer-product
-        run: node "$GITHUB_WORKSPACE/scripts/report-customer-evidence.mjs"
-      - name: Request verified deployment
-        if: success()
+        env:
+          VERIFIED_STACK_FILE: /tmp/verified/verification-meta.txt
+        run: |
+          export VERIFIED_STACK="$(sed -n '1p' "$VERIFIED_STACK_FILE")"
+          export VERIFIED_CHECKS="$(sed -n '2p' "$VERIFIED_STACK_FILE")"
+          node "$GITHUB_WORKSPACE/scripts/report-customer-evidence.mjs"
+      - name: Request exact verified deployment
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_DEPLOYMENT_REQUESTED $RUN_ID
           Repository: $TARGET_REPOSITORY
-          Commit: $(git -C /tmp/customer-product rev-parse HEAD)
+          Commit: $VERIFIED_COMMIT
           Verification workflow: $GITHUB_RUN_ID"
-      - name: Record delivery failure
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          DIAGNOSTICS="$(tail -c 8000 /tmp/customer-verification.log 2>/dev/null | sed -E 's/(token|secret|password|authorization|api[_-]?key)[=: ][^ ]+/\\1=[REDACTED]/Ig' || true)"
-          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_CUSTOMER_DELIVERY_FAILED $RUN_ID
-          Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded.
-          Repair-Diagnostics: workflow=$GITHUB_RUN_ID;job=$GITHUB_JOB;attempt=$GITHUB_RUN_ATTEMPT;repository=$TARGET_REPOSITORY
-          Verification-Output:
-          ```
-          $DIAGNOSTICS
-          ```"
-      - name: Record verified completion
-        if: success()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_SLICE_COMPLETED $RUN_ID customer-product
-          Verified customer product was applied, tested and pushed to $TARGET_REPOSITORY."
