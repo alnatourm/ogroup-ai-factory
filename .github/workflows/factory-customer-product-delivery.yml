@@ -43,7 +43,10 @@ jobs:
           SOURCE_REPOSITORY: ${{ github.repository }}
       - name: Verify customer product
         working-directory: /tmp/customer-product
+        shell: bash
         run: |
+          set -o pipefail
+          exec > >(tee /tmp/customer-verification.log) 2>&1
           if [ -f package.json ]; then
             if [ -f package-lock.json ]; then npm ci; else npm install; fi
             echo "VERIFIED_STACK=node" >> "$GITHUB_ENV"
@@ -91,8 +94,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          DIAGNOSTICS="$(tail -c 8000 /tmp/customer-verification.log 2>/dev/null | sed -E 's/(token|secret|password|authorization|api[_-]?key)[=: ][^ ]+/\\1=[REDACTED]/Ig' || true)"
           gh issue comment "$SOURCE_ISSUE" --repo "${{ github.repository }}" --body "FACTORY_CUSTOMER_DELIVERY_FAILED $RUN_ID
-          Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded.\n          Repair-Diagnostics: workflow=$GITHUB_RUN_ID;job=$GITHUB_JOB;attempt=$GITHUB_RUN_ATTEMPT;repository=$TARGET_REPOSITORY"
+          Customer product delivery failed in workflow run $GITHUB_RUN_ID. No successful completion evidence was recorded.
+          Repair-Diagnostics: workflow=$GITHUB_RUN_ID;job=$GITHUB_JOB;attempt=$GITHUB_RUN_ATTEMPT;repository=$TARGET_REPOSITORY
+          Verification-Output:
+          ```
+          $DIAGNOSTICS
+          ```"
       - name: Record verified completion
         if: success()
         env:
