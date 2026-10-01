@@ -16,22 +16,10 @@ const token = process.env.GITHUB_TOKEN?.trim();
 const port = Number(process.env.PORT ?? '3000');
 const allowedOrigin = process.env.DASHBOARD_ORIGIN?.trim() ?? '';
 const sessionTtlMs = 7*24*60*60*1000;
+const trustProxy=process.env.FACTORY_TRUST_PROXY==='true';
+
 
 if (!token) throw new Error('GITHUB_TOKEN_REQUIRED');
-
-async function ensureCoreIdentitySchema(){
- if(!sql)return;
- await sql.unsafe("create table if not exists organizations(id uuid primary key,name text not null,created_at timestamptz not null default now(),updated_at timestamptz not null default now())");
- await sql.unsafe("create table if not exists users(id uuid primary key,email text not null,display_name text,created_at timestamptz not null default now(),updated_at timestamptz not null default now())");
- await sql.unsafe("create unique index if not exists users_email_unique on users(email)");
- await sql.unsafe("create table if not exists memberships(id uuid primary key,tenant_id uuid not null references organizations(id) on delete cascade,user_id uuid not null references users(id) on delete cascade,created_at timestamptz not null default now())");
- await sql.unsafe("create unique index if not exists memberships_tenant_user_unique on memberships(tenant_id,user_id)");
- await sql.unsafe("create table if not exists sessions(id uuid primary key,user_id uuid not null references users(id) on delete cascade,token_hash text not null,expires_at timestamptz not null,revoked_at timestamptz,created_at timestamptz not null default now(),last_seen_at timestamptz)");
- await sql.unsafe("create unique index if not exists sessions_token_hash_unique on sessions(token_hash)");
- await sql.unsafe("create table if not exists factory_runs(id text primary key,tenant_id uuid not null references organizations(id) on delete cascade,issue_number integer not null unique,name text not null,intent text not null,target_repository text not null,priority text not null default 'Normal',market text not null default '',language text not null default '',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,target_repository))");
- await sql.unsafe("create index if not exists factory_runs_tenant_created_idx on factory_runs(tenant_id,created_at desc)");
-}
-void ensureCoreIdentitySchema().catch((error)=>console.error('IDENTITY_SCHEMA_BOOTSTRAP_FAILED',error));
 
 async function github(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
@@ -57,8 +45,12 @@ function slugify(name:string){ return name.toLowerCase().replace(/[^a-z0-9]+/g,'
 function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??''); return labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace(/-/g,'_').toUpperCase()??'QUEUED'; }
 
 const app=express();
+if(trustProxy)app.set('trust proxy',1);
 app.disable('x-powered-by');
-app.use(express.json({limit:'256kb'}));
+app.use(express.json({limit:'256kb',strict:true}));
+const rateBuckets=new Map<string,{count:number;resetAt:number}>();
+app.use((req,res,next)=>{const now=Date.now(),key=req.ip||'unknown',current=rateBuckets.get(key);const bucket=!current||current.resetAt<=now?{count:1,resetAt:now+60000}:{count:current.count+1,resetAt:current.resetAt};rateBuckets.set(key,bucket);if(bucket.count>240){res.setHeader('Retry-After',String(Math.ceil((bucket.resetAt-now)/1000)));res.status(429).json({error:{code:'RATE_LIMITED'}});return}next()});
+app.use((req,res,next)=>{if(['POST','PUT','PATCH','DELETE'].includes(req.method)&&req.path.startsWith('/api/v1/factory')){const origin=req.header('origin');if(origin&&(!allowedOrigin||origin!==allowedOrigin)){res.status(403).json({error:{code:'ORIGIN_NOT_ALLOWED'}});return}}next()});
 interface RequestAuthContext { userId:string|null; membershipId:string|null; internal:boolean }
 function tenantFromRequest(req:express.Request):string|null { return (resTenant.get(req)??null); }
 const resTenant=new WeakMap<express.Request,string>();
@@ -82,7 +74,8 @@ app.use((req,res,next)=>{
   if (allowedOrigin) {
     res.setHeader('Access-Control-Allow-Origin',allowedOrigin);
     res.setHeader('Access-Control-Allow-Credentials','true');
-    res.setHeader('Access-Control-Allow-Headers','content-type,x-tenant-id');
+    res.setHeader('Vary','Origin');
+    res.setHeader('Access-Control-Allow-Headers','authorization,content-type,idempotency-key');
     res.setHeader('Access-Control-Allow-Methods','GET,POST,PUT,DELETE,OPTIONS');
   }
   if(req.method==='OPTIONS'){res.status(204).send();return}
@@ -95,7 +88,6 @@ app.use('/api/v1/factory',async(req,res,next)=>{
    if(!sql){res.status(503).json({error:{code:'FACTORY_AUTH_DATABASE_REQUIRED'}});return}
    const header=req.header('authorization')??''; const bearer=header.startsWith('Bearer ')?header.slice(7).trim():'';
    if(!bearer){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
-   if(controlApiKey&&bearer===controlApiKey){const tenant=req.header('x-tenant-id')?.trim();if(!tenant){res.status(401).json({error:{code:'TENANT_REQUIRED'}});return}resTenant.set(req,tenant);requestAuth.set(req,{userId:null,membershipId:null,internal:true});next();return}
    const tokenHash=createHash('sha256').update(bearer).digest('hex');
    const sessions=await sql`select user_id from sessions where token_hash=${tokenHash} and revoked_at is null and expires_at>now() limit 1`;
    if(!sessions[0]){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
@@ -426,6 +418,8 @@ app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)
 });
 
 app.use((error:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{
+ const bodyError=error instanceof SyntaxError&&'status' in error&&Number((error as {status?:number}).status)===400;
+ if(bodyError){res.status(400).json({error:{code:'MALFORMED_JSON'}});return}
  console.error(error); res.status(500).json({error:{code:'FACTORY_CONTROL_ERROR',message:'Factory control operation failed.'}});
 });
 
