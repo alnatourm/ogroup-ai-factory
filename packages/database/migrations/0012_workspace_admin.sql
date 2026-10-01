@@ -35,3 +35,4 @@ CREATE TABLE IF NOT EXISTS factory_runtime_brain (
  updated_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY (tenant_id,run_id,section)
 );
+
