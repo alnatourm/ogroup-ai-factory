@@ -193,8 +193,8 @@ const state: WatchdogStatePort = {
 interface TrustedRunMetadata { id:string; tenantId:string; issueNumber:number; name:string; intent:string; targetRepository:string }
 async function trustedRunMetadata(runId:string):Promise<TrustedRunMetadata>{
   if(!controlApiUrl||!controlApiKey) throw new Error('FACTORY_RUN_METADATA_API_NOT_CONFIGURED');
-  const response=await fetch(\`${controlApiUrl.replace(/\\\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}\`,{headers:{'x-factory-control-key':controlApiKey}});
-  if(!response.ok) throw new Error(\`FACTORY_RUN_METADATA_${response.status}\`);
+  const response=await fetch(`${controlApiUrl.replace(/\\\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}`,{headers:{'x-factory-control-key':controlApiKey}});
+  if(!response.ok) throw new Error(`FACTORY_RUN_METADATA_${response.status}`);
   const payload=await response.json() as {data:TrustedRunMetadata};
   if(!payload.data?.targetRepository||!payload.data?.tenantId) throw new Error('FACTORY_RUN_METADATA_INVALID');
   return payload.data;
