@@ -342,19 +342,13 @@ function watchdogHealth(){
 app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
  try{
-  const [issuesResponse,runsResponse]=await Promise.all([
-   github('/issues?state=open&labels=factory-work&per_page=100'),
-   github('/actions/runs?per_page=30')
-  ]);
-  const issues=(await issuesResponse.json() as Issue[]).filter(x=>!x.pull_request && x.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim()===tenant);
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const [runRows,runsResponse]=await Promise.all([sql`select id,issue_number,name,target_repository,updated_at from factory_runs where tenant_id=${tenant} order by updated_at desc limit 100`,github('/actions/runs?per_page=30')]);
+  const issues=await Promise.all(runRows.map(async row=>{const response=await github(`/issues/${Number(row.issue_number)}`);return {row,issue:await response.json() as Issue}}));
   const runs=(await runsResponse.json() as Runs).workflow_runs??[];
-  const mapped=issues.map(issue=>{
-   const labels=(issue.labels??[]).map(x=>x.name??'');
-   const status=labels.find(x=>x.startsWith('factory-status:'))?.replace('factory-status:','').replace('-','_').toUpperCase()??'QUEUED';
-   return {id:`factory-work:${issue.number}`,name:cleanName(issue.body?.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]||issue.title.replace(/^Factory product:\s*/i,'')),status,targetRepository:targetFromBody(issue.body),updatedAt:issue.updated_at};
-  });
+  const mapped=issues.map(({row,issue})=>({id:String(row.id),name:String(row.name),status:statusOf(issue),targetRepository:String(row.target_repository),updatedAt:new Date(row.updated_at as string).toISOString()}));
   const attention=mapped.filter(x=>x.status==='WAITING_HUMAN');
-  res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:watchdogHealth(),attention},meta:{source:'live'}});
+  res.json({data:{runs:mapped,activity:runs.slice(0,15).map(x=>({id:x.id,name:x.name,status:x.status,conclusion:x.conclusion,updatedAt:x.updated_at,url:x.html_url})),agents:[],health:watchdogHealth(),attention},meta:{source:'postgres+github-evidence'}});
  }catch(e){next(e)}
 });
 
