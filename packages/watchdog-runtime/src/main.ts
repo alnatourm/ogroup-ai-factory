@@ -62,9 +62,6 @@ function hasDeploymentStarted(comments: FactoryComment[], runId: string): boolea
     return first===`FACTORY_DEPLOYMENT_STARTED ${runId}`;
   });
 }
-function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
-  return Boolean(deploymentRequest(comments,runId));
-}
 async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment, requestedCommit: string): Promise<void> {
   if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
   const lines=(comment.body ?? '').split('\n').map((line)=>line.trim());
