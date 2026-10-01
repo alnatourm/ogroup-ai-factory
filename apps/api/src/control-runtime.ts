@@ -135,13 +135,12 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
     const counts=await sql.unsafe("select (select count(*) from users)::int as users,(select count(*) from memberships)::int as memberships");
     if(Number(counts[0]?.users??0)!==0||Number(counts[0]?.memberships??0)!==0){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
     const newUserId=randomUUID(),tenantId=randomUUID(),membershipId=randomUUID();
-    await sql.unsafe('begin');
-    try{
-     await sql.unsafe('insert into organizations(id,name) values($1,$2)',[tenantId,'OGroup AI Factory']);
-     await sql.unsafe('insert into users(id,email,display_name) values($1,$2,$3)',[newUserId,email,typeof req.body?.displayName==='string'?req.body.displayName.trim()||null:null]);
-     await sql.unsafe('insert into memberships(id,tenant_id,user_id) values($1,$2,$3)',[membershipId,tenantId,newUserId]);
-     await sql.unsafe('commit'); userId=newUserId;
-    }catch(error){await sql.unsafe('rollback');throw error}
+    await sql.begin(async tx=>{
+     await tx.unsafe('insert into organizations(id,name) values($1,$2)',[tenantId,'OGroup AI Factory']);
+     await tx.unsafe('insert into users(id,email,display_name) values($1,$2,$3)',[newUserId,email,typeof req.body?.displayName==='string'?req.body.displayName.trim()||null:null]);
+     await tx.unsafe('insert into memberships(id,tenant_id,user_id) values($1,$2,$3)',[membershipId,tenantId,newUserId]);
+    });
+    userId=newUserId;
    }else{
     userId=String(users[0].id);
     const membership=await sql`select id from memberships where user_id=${userId} limit 1`;
