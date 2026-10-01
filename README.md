@@ -287,3 +287,35 @@ The SaaS is **not production-accepted** until these are implemented and verified
 
 ### Acceptance rule
 A run is not complete because a workflow is green. Completion requires tenant-safe durable state, verified artifacts, authorized human gates, exact-commit verification, successful deployment, public live proof, and persisted evidence.
+
+
+## Direct Builder Handoff - 2026-10-01
+
+**Operating rule:** ChatGPT / GPT-5.6 Sol is the direct builder. The AI Factory is the product being built and must not be used to build itself unless the Product Owner explicitly changes this rule.
+
+### Verified progress in the current hardening pass
+- PR #209: design and production human gates are authorized from canonical PostgreSQL tenant/run ownership.
+- PR #210: generated customer repositories use collision-safe identities.
+- PR #211: runtime persistence tables are represented in versioned database migrations.
+- PR #212: generated delivery rejects common secret, credential, private-key and auth-file paths.
+- PR #213: durable Factory permission vocabulary exists for run creation, design approval, production approval, Factory configuration, BYOK management and billing visibility.
+- PR #214: Project Brain ownership resolves from canonical PostgreSQL runs rather than editable issue text.
+- PR #215: PostgreSQL-backed commercial plan discovery and tenant commercial state APIs exist for subscription, quota and billing history.
+- PR #216: canonical runs support tenant-scoped idempotency keys.
+- PR #217: tenant snapshots discover runs from PostgreSQL; GitHub is lifecycle evidence rather than tenant ownership truth.
+- PR #218: run creation enforces tenant-scoped idempotent replay and avoids duplicate product creation for repeated requests.
+
+### Continue from here, do not rebuild
+1. Verify the latest exact main SHA through CI and Railway before calling it production-proven.
+2. Enforce the new RBAC permission keys on every sensitive API route and add membership/invite/account administration.
+3. Finish commercial quotas and subscription/billing synchronization, including atomic quota enforcement at run creation and usage ingestion. Do not invent plan prices.
+4. Remove remaining request-path runtime DDL after confirming migrations are applied in deployment.
+5. Complete versioned BYOK encryption/decryption and server-side provider execution so Build With My AI never exposes customer credentials to the browser or generated-code jobs.
+6. Separate untrusted generated-code verification from privileged repository push/deployment credentials.
+7. Replace broad internal credentials with scoped/signed callbacks and harden CSRF, CORS, proxy, rate limits and malformed-request handling.
+8. Harden deployment retries and exact-commit live proof, then prove Build For Me end to end on a disposable customer project.
+9. Connect Dashboard commercial/onboarding/account surfaces to the real APIs and remove remaining placeholders.
+10. Run full production acceptance: sign in -> create product -> Project Brain -> design gate -> build -> secret-free verification -> repair -> production gate -> privileged deployment -> public live verification -> durable evidence -> usage/quota/billing.
+
+### Builder loop
+Inspect -> implement -> exact-head CI -> repair failures -> merge verified head -> Railway deploy -> verify exact merged SHA/live behavior -> update README -> continue. Queued CI or deployment is not a stopping point while independent work remains.
