@@ -69,8 +69,11 @@ function deploymentRequest(comments: FactoryComment[], runId: string): {commit:s
   const commit=field('Commit'); const repository=field('Repository');
   return commit&&repository?{commit,repository}:null;
 }
-function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
-  return Boolean(deploymentRequest(comments,runId));
+function hasDeploymentStarted(comments: FactoryComment[], runId: string): boolean {
+  return comments.some((comment)=>{
+    const first=(comment.body??'').split('\n',1)[0]?.trim()??'';
+    return first===`FACTORY_DEPLOYMENT_STARTED ${runId}`;
+  });
 }
 async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment, requestedCommit: string): Promise<void> {
   if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
@@ -298,8 +301,15 @@ const recovery: WatchdogRecoveryPort = {
           if (!isDashboardTarget(target)) {
             const proof=comments.find((comment)=> (comment.body ?? '').split('\n',1)[0]?.trim().startsWith(`FACTORY_DEPLOYMENT_VERIFIED ${runId}`));
             if (!proof) {
-              await setFactoryStatus(issueNumber, hasDeploymentRequest(comments, runId) ? 'waiting-dependency' : 'verifying');
-              console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: hasDeploymentRequest(comments, runId), at: new Date().toISOString() }));
+              const request=deploymentRequest(comments,runId);
+              if(request && !hasDeploymentStarted(comments,runId)) {
+                await github(`/issues/${issueNumber}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:`FACTORY_DEPLOYMENT_STARTED ${runId}\nRepository: ${request.repository}\nCommit: ${request.commit}\nProvider: railway`})});
+                await dispatch('factory-customer-deploy',{runId,sourceIssue:issueNumber,targetRepository:request.repository,commit:request.commit});
+                console.log(JSON.stringify({type:'WATCHDOG_DEPLOYMENT_DISPATCHED',runId,target,commit:request.commit,provider:'railway',at:new Date().toISOString()}));
+                return;
+              }
+              await setFactoryStatus(issueNumber, request ? 'waiting-dependency' : 'verifying');
+              console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: Boolean(request), started: hasDeploymentStarted(comments,runId), at: new Date().toISOString() }));
               return;
             }
             await persistDeploymentProof(runId, tenantFromIssue(issue), target, proof, deploymentRequestCommit(comments,runId));
