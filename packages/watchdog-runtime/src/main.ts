@@ -39,7 +39,7 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
 function hasFreshRepairResult(comments: FactoryComment[], runId: string): boolean {
   let lastFailure=-1;
   for(let i=0;i<comments.length;i++){
-    const first=(comments[i].body??'').split('\n',1)[0]?.trim()??'';
+    const first=(comments[i]?.body??'').split('\n',1)[0]?.trim()??'';
     if(first.startsWith(`FACTORY_CUSTOMER_DELIVERY_FAILED ${runId}`)) lastFailure=i;
   }
   if(lastFailure<0)return false;
