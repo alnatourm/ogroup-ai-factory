@@ -19,6 +19,7 @@
     "drizzle-orm": "^0.44.0"
   },
   "scripts": {
-    "start": "tsx src/control-runtime.ts"
+    "start": "tsx src/control-runtime.ts",
+    "migrate": "tsx src/migrate.ts"
   }
 }

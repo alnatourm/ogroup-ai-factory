@@ -59,8 +59,18 @@ function statusOf(issue:Issue){ const labels=(issue.labels??[]).map(x=>x.name??'
 const app=express();
 app.disable('x-powered-by');
 app.use(express.json({limit:'256kb'}));
+interface RequestAuthContext { userId:string|null; membershipId:string|null; internal:boolean }
 function tenantFromRequest(req:express.Request):string|null { return (resTenant.get(req)??null); }
 const resTenant=new WeakMap<express.Request,string>();
+const requestAuth=new WeakMap<express.Request,RequestAuthContext>();
+function authContext(req:express.Request):RequestAuthContext { return requestAuth.get(req)??{userId:null,membershipId:null,internal:false}; }
+async function requirePermission(req:express.Request,res:express.Response,permission:string):Promise<boolean>{
+ if(!sql){res.status(503).json({error:{code:'FACTORY_AUTH_DATABASE_REQUIRED'}});return false}
+ const ctx=authContext(req); if(ctx.internal)return true;
+ const tenant=tenantFromRequest(req); if(!tenant||!ctx.membershipId){res.status(403).json({error:{code:'PERMISSION_DENIED',permission}});return false}
+ const rows=await sql`select 1 from user_roles ur join role_permissions rp on rp.role_id=ur.role_id join permissions p on p.id=rp.permission_id where ur.membership_id=${ctx.membershipId} and ur.tenant_id=${tenant} and p.key=${permission} limit 1`;
+ if(!rows[0]){res.status(403).json({error:{code:'PERMISSION_DENIED',permission}});return false} return true;
+}
 function safeTenantSlug(value:string){ return value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,36)||'tenant'; }
 function requireTenant(req:express.Request,res:express.Response):string|null {
   const tenant=tenantFromRequest(req);
@@ -81,17 +91,17 @@ app.use((req,res,next)=>{
 
 app.use('/api/v1/factory',async(req,res,next)=>{
   try{
-   if(!authRequired){const legacy=req.header('x-tenant-id')?.trim();if(legacy)resTenant.set(req,legacy);next();return}
+   if(!authRequired){const legacy=req.header('x-tenant-id')?.trim();if(legacy)resTenant.set(req,legacy);requestAuth.set(req,{userId:null,membershipId:null,internal:true});next();return}
    if(!sql){res.status(503).json({error:{code:'FACTORY_AUTH_DATABASE_REQUIRED'}});return}
    const header=req.header('authorization')??''; const bearer=header.startsWith('Bearer ')?header.slice(7).trim():'';
    if(!bearer){res.status(401).json({error:{code:'UNAUTHORIZED',message:'Authentication is required.'}});return}
-   if(controlApiKey&&bearer===controlApiKey){const tenant=req.header('x-tenant-id')?.trim();if(!tenant){res.status(401).json({error:{code:'TENANT_REQUIRED'}});return}resTenant.set(req,tenant);next();return}
+   if(controlApiKey&&bearer===controlApiKey){const tenant=req.header('x-tenant-id')?.trim();if(!tenant){res.status(401).json({error:{code:'TENANT_REQUIRED'}});return}resTenant.set(req,tenant);requestAuth.set(req,{userId:null,membershipId:null,internal:true});next();return}
    const tokenHash=createHash('sha256').update(bearer).digest('hex');
    const sessions=await sql`select user_id from sessions where token_hash=${tokenHash} and revoked_at is null and expires_at>now() limit 1`;
    if(!sessions[0]){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
    const memberships=await sql`select tenant_id from memberships where user_id=${sessions[0].user_id} order by created_at asc,id asc limit 1`;
    if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
-   resTenant.set(req,String(memberships[0].tenant_id)); next();
+   resTenant.set(req,String(memberships[0].tenant_id)); requestAuth.set(req,{userId:String(sessions[0].user_id),membershipId:String(memberships[0].id),internal:false}); next();
   }catch(e){next(e)}
 });
 
@@ -125,8 +135,6 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
  try{
   if(!controlApiKey||(req.header('authorization')??'')!==`Bearer ${controlApiKey}`){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
   if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}
-  await sql`create table if not exists external_identities (provider text not null,subject text not null,user_id uuid not null references users(id) on delete cascade,email text,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),primary key(provider,subject))`;
-  await sql`create index if not exists external_identities_user_idx on external_identities(user_id)`;
   const subject=typeof req.body?.subject==='string'?req.body.subject.trim():'';
   const email=typeof req.body?.email==='string'?req.body.email.trim().toLowerCase():'';
   if(!subject||!email){res.status(400).json({error:{code:'INVALID_GOOGLE_IDENTITY'}});return}
@@ -143,6 +151,10 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
      await tx.unsafe('insert into organizations(id,name) values($1,$2)',[tenantId,'OGroup AI Factory']);
      await tx.unsafe('insert into users(id,email,display_name) values($1,$2,$3)',[newUserId,email,typeof req.body?.displayName==='string'?req.body.displayName.trim()||null:null]);
      await tx.unsafe('insert into memberships(id,tenant_id,user_id) values($1,$2,$3)',[membershipId,tenantId,newUserId]);
+     const ownerRoleId=randomUUID();
+     await tx.unsafe('insert into roles(id,tenant_id,name) values($1,$2,$3)',[ownerRoleId,tenantId,'Owner']);
+     await tx.unsafe("insert into role_permissions(role_id,permission_id) select $1,id from permissions where key like 'factory.%' on conflict do nothing",[ownerRoleId]);
+     await tx.unsafe('insert into user_roles(membership_id,role_id,tenant_id) values($1,$2,$3)',[membershipId,ownerRoleId,tenantId]);
      return true;
     });
     if(!bootstrapped){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
@@ -165,10 +177,9 @@ app.post('/internal/v1/auth/google/session',async(req,res,next)=>{
 const byokMasterKey=process.env.FACTORY_BYOK_MASTER_KEY?.trim()??'';
 function vaultKey(){if(!byokMasterKey)throw new Error('BYOK_VAULT_NOT_CONFIGURED');return createHash('sha256').update(byokMasterKey).digest()}
 function encryptSecret(secret:string){const iv=randomBytes(12);const cipher=createCipheriv('aes-256-gcm',vaultKey(),iv);const encrypted=Buffer.concat([cipher.update(secret,'utf8'),cipher.final()]);const tag=cipher.getAuthTag();return {ciphertext:encrypted.toString('base64'),iv:iv.toString('base64'),tag:tag.toString('base64')}}
-async function ensureVaultTable(){if(!sql)return;await sql`create table if not exists factory_byok_vault (tenant_id text not null, credential_ref text not null, provider text not null, ciphertext text not null, iv text not null, tag text not null, updated_at timestamptz not null default now(), primary key(tenant_id,credential_ref))`}
-app.put('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const credentialRef=req.params.credentialRef.trim();const provider=typeof req.body?.provider==='string'?req.body.provider.trim():'';const secret=typeof req.body?.secret==='string'?req.body.secret.trim():'';if(!credentialRef||!provider||secret.length<8){res.status(400).json({error:{code:'INVALID_BYOK_CREDENTIAL'}});return}await ensureVaultTable();const enc=encryptSecret(secret);await sql`insert into factory_byok_vault(tenant_id,credential_ref,provider,ciphertext,iv,tag,updated_at) values(${tenant},${credentialRef},${provider},${enc.ciphertext},${enc.iv},${enc.tag},now()) on conflict(tenant_id,credential_ref) do update set provider=excluded.provider,ciphertext=excluded.ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=now()`;res.json({data:{credentialRef,provider,configured:true},meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
-app.get('/api/v1/factory/byok',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}await ensureVaultTable();const rows=await sql`select credential_ref,provider,updated_at from factory_byok_vault where tenant_id=${tenant} order by updated_at desc`;res.json({data:rows.map(r=>({credentialRef:String(r.credential_ref),provider:String(r.provider),configured:true,updatedAt:new Date(r.updated_at as string).toISOString()})),meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
-app.delete('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}await ensureVaultTable();await sql`delete from factory_byok_vault where tenant_id=${tenant} and credential_ref=${req.params.credentialRef}`;res.status(204).send()}catch(e){next(e)}});
+app.put('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const credentialRef=req.params.credentialRef.trim();const provider=typeof req.body?.provider==='string'?req.body.provider.trim():'';const secret=typeof req.body?.secret==='string'?req.body.secret.trim():'';if(!credentialRef||!provider||secret.length<8){res.status(400).json({error:{code:'INVALID_BYOK_CREDENTIAL'}});return}const enc=encryptSecret(secret);await sql`insert into factory_byok_vault(tenant_id,credential_ref,provider,ciphertext,iv,tag,updated_at) values(${tenant},${credentialRef},${provider},${enc.ciphertext},${enc.iv},${enc.tag},now()) on conflict(tenant_id,credential_ref) do update set provider=excluded.provider,ciphertext=excluded.ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=now()`;res.json({data:{credentialRef,provider,configured:true},meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
+app.get('/api/v1/factory/byok',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}const rows=await sql`select credential_ref,provider,updated_at from factory_byok_vault where tenant_id=${tenant} order by updated_at desc`;res.json({data:rows.map(r=>({credentialRef:String(r.credential_ref),provider:String(r.provider),configured:true,updatedAt:new Date(r.updated_at as string).toISOString()})),meta:{source:'encrypted-vault'}})}catch(e){next(e)}});
+app.delete('/api/v1/factory/byok/:credentialRef',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.byok.manage')))return;if(!sql){res.status(503).json({error:{code:'BYOK_DATABASE_REQUIRED'}});return}await sql`delete from factory_byok_vault where tenant_id=${tenant} and credential_ref=${req.params.credentialRef}`;res.status(204).send()}catch(e){next(e)}});
 interface FactoryConfig {
  mode:'managed'|'custom';
  providers:Array<{id:string;name:string;kind:string;credentialRef?:string;baseUrl?:string;enabled:boolean}>;
@@ -181,24 +192,15 @@ function configFor(tenant:string):FactoryConfig {
  const existing=factoryConfigs.get(tenant); if(existing)return existing;
  const initial:FactoryConfig={mode:'managed',providers:[],models:[],agents:[],roles:[]}; factoryConfigs.set(tenant,initial); return initial;
 }
-async function ensureConfigTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_config (
-  tenant_id text primary key,
-  config_json text not null,
-  updated_at timestamptz not null default now()
- )`;
-}
 async function loadConfig(tenant:string):Promise<FactoryConfig>{
  if(!sql)return configFor(tenant);
- await ensureConfigTable();
  const rows=await sql`select config_json from factory_runtime_config where tenant_id=${tenant}`;
  if(!rows[0])return {mode:'managed',providers:[],models:[],agents:[],roles:[]};
  return JSON.parse(String(rows[0].config_json)) as FactoryConfig;
 }
 async function persistConfig(tenant:string,input:FactoryConfig){
  if(!sql){factoryConfigs.set(tenant,input);return 'memory-fallback'}
- await ensureConfigTable(); const payload=JSON.stringify(input);
+ const payload=JSON.stringify(input);
  await sql`insert into factory_runtime_config (tenant_id,config_json,updated_at) values (${tenant},${payload},now())
  on conflict (tenant_id) do update set config_json=excluded.config_json,updated_at=now()`;
  return 'postgres';
@@ -215,7 +217,7 @@ app.get('/api/v1/factory/config',async(req,res)=>{
 });
 
 app.put('/api/v1/factory/config',async(req,res)=>{
- const tenant=requireTenant(req,res); if(!tenant)return;
+ const tenant=requireTenant(req,res); if(!tenant)return; if(!(await requirePermission(req,res,'factory.config.manage')))return;
  const input=configInput(req.body); if(!input){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory configuration.'}});return}
  const providerIds=new Set(input.providers.map(x=>x.id)); const modelIds=new Set(input.models.map(x=>x.id)); const agentIds=new Set(input.agents.map(x=>x.id));
  if(input.models.some(x=>!providerIds.has(x.providerId))||input.roles.some(x=>!agentIds.has(x.agentId)||(x.modelId&&!modelIds.has(x.modelId))||(x.fallbackModelId&&!modelIds.has(x.fallbackModelId)))){
@@ -226,27 +228,10 @@ app.put('/api/v1/factory/config',async(req,res)=>{
 
 type UsageSource='ogroup'|'customer';
 interface RuntimeUsageEvent { projectId?:string; source:UsageSource; provider?:string; model?:string; inputTokens:number; outputTokens:number; costMicros:number; occurredAt:string }
-async function ensureUsageTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_usage (
-  id bigserial primary key,
-  tenant_id text not null,
-  project_id text,
-  source text not null check (source in ('ogroup','customer')),
-  provider text,
-  model text,
-  input_tokens integer not null default 0 check (input_tokens >= 0),
-  output_tokens integer not null default 0 check (output_tokens >= 0),
-  cost_micros bigint not null default 0 check (cost_micros >= 0),
-  occurred_at timestamptz not null default now()
- )`;
- await sql`create index if not exists factory_runtime_usage_tenant_time on factory_runtime_usage (tenant_id,occurred_at desc)`;
-}
 app.get('/api/v1/factory/usage',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res);if(!tenant)return;
   if(!sql){res.status(503).json({error:{code:'USAGE_DATABASE_REQUIRED',message:'Usage persistence requires PostgreSQL.'}});return}
-  await ensureUsageTable();
   const rows=await sql`select source,count(*)::int as events,coalesce(sum(input_tokens),0)::bigint as input_tokens,coalesce(sum(output_tokens),0)::bigint as output_tokens,coalesce(sum(cost_micros),0)::bigint as cost_micros from factory_runtime_usage where tenant_id=${tenant} group by source`;
   const empty=()=>({events:0,inputTokens:0,outputTokens:0,costMicros:0});
   const bySource:{ogroup:ReturnType<typeof empty>;customer:ReturnType<typeof empty>}={ogroup:empty(),customer:empty()};
@@ -262,7 +247,6 @@ app.post('/api/v1/factory/usage',async(req,res,next)=>{
   const body=req.body as Partial<RuntimeUsageEvent>; const source=body.source;
   const inputTokens=Number(body.inputTokens??0),outputTokens=Number(body.outputTokens??0),costMicros=Number(body.costMicros??0);
   if((source!=='ogroup'&&source!=='customer')||![inputTokens,outputTokens,costMicros].every(Number.isFinite)||[inputTokens,outputTokens,costMicros].some(x=>x<0)){res.status(400).json({error:{code:'INVALID_USAGE_EVENT'}});return}
-  await ensureUsageTable();
   const occurredAt=body.occurredAt?new Date(body.occurredAt):new Date(); if(Number.isNaN(occurredAt.getTime())){res.status(400).json({error:{code:'INVALID_USAGE_TIME'}});return}
   await sql`insert into factory_runtime_usage (tenant_id,project_id,source,provider,model,input_tokens,output_tokens,cost_micros,occurred_at) values (${tenant},${body.projectId??null},${source},${body.provider??null},${body.model??null},${inputTokens},${outputTokens},${costMicros},${occurredAt})`;
   res.status(201).json({data:{recorded:true},meta:{source:'postgres'}});
@@ -271,28 +255,19 @@ app.post('/api/v1/factory/usage',async(req,res,next)=>{
 
 app.get('/api/v1/factory/plans',async(_req,res,next)=>{try{if(!sql){res.status(503).json({error:{code:'COMMERCIAL_DATABASE_REQUIRED'}});return}const rows=await sql`select id,name,monthly_price_cents,included_projects,included_ai_cost_micros from factory_plans where active=true order by monthly_price_cents asc,id asc`;res.json({data:rows.map(r=>({id:String(r.id),name:String(r.name),monthlyPriceCents:Number(r.monthly_price_cents),includedProjects:Number(r.included_projects),includedAiCostMicros:Number(r.included_ai_cost_micros)})),meta:{source:'postgres'}})}catch(e){next(e)}});
 
-app.get('/api/v1/factory/commercial',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!sql){res.status(503).json({error:{code:'COMMERCIAL_DATABASE_REQUIRED'}});return}const periodKey=new Date().toISOString().slice(0,7);const [subscriptions,quotas,billing]=await Promise.all([sql`select s.id,s.plan_id,s.status,s.provider,s.current_period_start,s.current_period_end,p.name as plan_name,p.monthly_price_cents,p.included_projects,p.included_ai_cost_micros from factory_subscriptions s join factory_plans p on p.id=s.plan_id where s.tenant_id=${tenant} limit 1`,sql`select projects_created,ai_cost_micros from factory_quota_counters where tenant_id=${tenant} and period_key=${periodKey} limit 1`,sql`select provider,event_type,amount_cents,currency,occurred_at from factory_billing_events where tenant_id=${tenant} order by occurred_at desc limit 50`]);const s=subscriptions[0];const q=quotas[0];res.json({data:{subscription:s?{id:String(s.id),planId:String(s.plan_id),planName:String(s.plan_name),status:String(s.status),provider:s.provider?String(s.provider):null,monthlyPriceCents:Number(s.monthly_price_cents),includedProjects:Number(s.included_projects),includedAiCostMicros:Number(s.included_ai_cost_micros),currentPeriodStart:s.current_period_start?new Date(s.current_period_start as string).toISOString():null,currentPeriodEnd:s.current_period_end?new Date(s.current_period_end as string).toISOString():null}:null,quota:{periodKey,projectsCreated:Number(q?.projects_created??0),aiCostMicros:Number(q?.ai_cost_micros??0)},billing:billing.map(r=>({provider:String(r.provider),eventType:String(r.event_type),amountCents:r.amount_cents===null?null:Number(r.amount_cents),currency:r.currency?String(r.currency):null,occurredAt:new Date(r.occurred_at as string).toISOString()}))},meta:{source:'postgres'}})}catch(e){next(e)}});
+app.get('/api/v1/factory/commercial',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.billing.view')))return;if(!sql){res.status(503).json({error:{code:'COMMERCIAL_DATABASE_REQUIRED'}});return}const periodKey=new Date().toISOString().slice(0,7);const [subscriptions,quotas,billing]=await Promise.all([sql`select s.id,s.plan_id,s.status,s.provider,s.current_period_start,s.current_period_end,p.name as plan_name,p.monthly_price_cents,p.included_projects,p.included_ai_cost_micros from factory_subscriptions s join factory_plans p on p.id=s.plan_id where s.tenant_id=${tenant} limit 1`,sql`select projects_created,ai_cost_micros from factory_quota_counters where tenant_id=${tenant} and period_key=${periodKey} limit 1`,sql`select provider,event_type,amount_cents,currency,occurred_at from factory_billing_events where tenant_id=${tenant} order by occurred_at desc limit 50`]);const s=subscriptions[0];const q=quotas[0];res.json({data:{subscription:s?{id:String(s.id),planId:String(s.plan_id),planName:String(s.plan_name),status:String(s.status),provider:s.provider?String(s.provider):null,monthlyPriceCents:Number(s.monthly_price_cents),includedProjects:Number(s.included_projects),includedAiCostMicros:Number(s.included_ai_cost_micros),currentPeriodStart:s.current_period_start?new Date(s.current_period_start as string).toISOString():null,currentPeriodEnd:s.current_period_end?new Date(s.current_period_end as string).toISOString():null}:null,quota:{periodKey,projectsCreated:Number(q?.projects_created??0),aiCostMicros:Number(q?.ai_cost_micros??0)},billing:billing.map(r=>({provider:String(r.provider),eventType:String(r.event_type),amountCents:r.amount_cents===null?null:Number(r.amount_cents),currency:r.currency?String(r.currency):null,occurredAt:new Date(r.occurred_at as string).toISOString()}))},meta:{source:'postgres'}})}catch(e){next(e)}});
+
+app.get('/api/v1/factory/account/memberships',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.account.manage')))return;if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}const rows=await sql`select m.id,m.user_id,u.email,u.display_name,m.created_at,coalesce(json_agg(json_build_object('id',r.id,'name',r.name)) filter (where r.id is not null),'[]') roles from memberships m join users u on u.id=m.user_id left join user_roles ur on ur.membership_id=m.id and ur.tenant_id=m.tenant_id left join roles r on r.id=ur.role_id and r.tenant_id=m.tenant_id where m.tenant_id=${tenant} group by m.id,m.user_id,u.email,u.display_name,m.created_at order by m.created_at`;res.json({data:rows,meta:{source:'postgres'}})}catch(e){next(e)}});
+app.get('/api/v1/factory/account/roles',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.account.manage')))return;if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}const rows=await sql`select r.id,r.name,coalesce(array_agg(p.key order by p.key) filter (where p.key is not null),'{}') permissions from roles r left join role_permissions rp on rp.role_id=r.id left join permissions p on p.id=rp.permission_id where r.tenant_id=${tenant} group by r.id,r.name order by r.name`;res.json({data:rows,meta:{source:'postgres'}})}catch(e){next(e)}});
+app.put('/api/v1/factory/account/memberships/:membershipId/roles',async(req,res,next)=>{try{const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.account.manage')))return;if(!sql){res.status(503).json({error:{code:'DATABASE_REQUIRED'}});return}const roleIds=Array.isArray(req.body?.roleIds)?req.body.roleIds.filter((x:unknown)=>typeof x==='string'):[];const member=await sql`select id from memberships where id=${req.params.membershipId} and tenant_id=${tenant} limit 1`;if(!member[0]){res.status(404).json({error:{code:'MEMBERSHIP_NOT_FOUND'}});return}const valid=roleIds.length?await sql`select id from roles where tenant_id=${tenant} and id = any(${roleIds}::uuid[])`:[];if(valid.length!==roleIds.length){res.status(400).json({error:{code:'INVALID_ROLE_ASSIGNMENT'}});return}await sql.begin(async tx=>{await tx.unsafe('delete from user_roles where membership_id=$1 and tenant_id=$2',[req.params.membershipId,tenant]);for(const roleId of roleIds)await tx.unsafe('insert into user_roles(membership_id,role_id,tenant_id) values($1,$2,$3) on conflict do nothing',[req.params.membershipId,roleId,tenant])});res.status(204).send()}catch(e){next(e)}});
 
 const BRAIN_SECTIONS=['requirements','business_rules','architecture','decisions','approved_designs','tasks','known_issues','testing_evidence','deployment_history'] as const;
 type BrainSection=typeof BRAIN_SECTIONS[number];
 interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
 const projectBrains=new Map<string,Map<string,BrainEntry>>();
 function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
-async function ensureBrainTable(){
- if(!sql)return;
- await sql`create table if not exists factory_runtime_brain (
-  tenant_id text not null,
-  run_id text not null,
-  section text not null,
-  content_json text not null default 'null',
-  version integer not null default 1,
-  updated_at timestamptz not null default now(),
-  primary key (tenant_id, run_id, section)
- )`;
-}
 async function loadBrain(tenant:string,runId:string){
  if(!sql)return projectBrains.get(brainKey(tenant,runId));
- await ensureBrainTable();
  const rows=await sql`select section,content_json,version,updated_at from factory_runtime_brain where tenant_id=${tenant} and run_id=${runId}`;
  const brain=new Map<string,BrainEntry>();
  for(const row of rows) brain.set(String(row.section),{section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()});
@@ -300,7 +275,6 @@ async function loadBrain(tenant:string,runId:string){
 }
 async function persistBrain(tenant:string,runId:string,section:BrainSection,content:unknown){
  if(!sql)return null;
- await ensureBrainTable();
  const payload=JSON.stringify(content??null);
  const rows=await sql`insert into factory_runtime_brain (tenant_id,run_id,section,content_json,version,updated_at)
  values (${tenant},${runId},${section},${payload},1,now())
@@ -357,7 +331,7 @@ app.get('/api/v1/factory/snapshot',async(req,res,next)=>{
 
 app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
-  const tenant=requireTenant(req,res); if(!tenant)return;
+  const tenant=requireTenant(req,res); if(!tenant)return; if(!(await requirePermission(req,res,'factory.run.create')))return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   const idempotencyKey=typeof req.header('idempotency-key')==='string'?req.header('idempotency-key')!.trim():'';
   if(idempotencyKey.length>128){res.status(400).json({error:{code:'INVALID_IDEMPOTENCY_KEY'}});return}
@@ -402,6 +376,8 @@ app.post('/api/v1/factory/runs/:runId/gates/:gate/:decision',async(req,res,next)
  try{
   const tenant=requireTenant(req,res); if(!tenant)return;
   const gate=req.params.gate; const decision=req.params.decision;
+  const gatePermission=gate==='design'?'factory.gate.design':gate==='production'?'factory.gate.production':'';
+  if(gatePermission&&!(await requirePermission(req,res,gatePermission)))return;
   if(!['design','production'].includes(gate)||!['approve','changes'].includes(decision)){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Invalid Factory gate command.'}});return}
   if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
   const rows=await sql`select issue_number from factory_runs where id=${req.params.runId} and tenant_id=${tenant} limit 1`;
