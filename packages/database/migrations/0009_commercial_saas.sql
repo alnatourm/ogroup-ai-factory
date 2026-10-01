@@ -8,11 +8,6 @@ CREATE TABLE factory_plans (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-INSERT INTO factory_plans (id,name,monthly_price_cents,included_projects,included_ai_cost_micros) VALUES
- ('starter','Starter',1500,3,10000000),
- ('growth','Growth',4900,15,50000000),
- ('pro','Pro',14900,100,200000000)
-ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE factory_subscriptions (
   id uuid PRIMARY KEY,
