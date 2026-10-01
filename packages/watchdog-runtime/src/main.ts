@@ -77,8 +77,9 @@ function nextDashboardSlice(done: Set<string>): string | null {
 
 function productIntent(issue: FactoryIssue): string {
   const body=issue.body??'';
-  const match=body.match(/(?:^|\n)Product intent:\s*(.+)/i);
-  return match?.[1]?.trim()??'';
+  const heading=body.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]?.trim();
+  const legacy=body.match(/(?:^|\n)Product intent:\s*(.+)/i)?.[1]?.trim();
+  return heading||legacy||'';
 }
 
 function isDashboardTarget(target: string): boolean {
@@ -176,9 +177,12 @@ function targetRepository(issue: FactoryIssue): string | null {
   return null;
 }
 function tenantFromIssue(issue: FactoryIssue): string {
-  const match = (issue.body ?? '').match(/^Tenant:\s*(\S+)\s*$/mi);
-  if (!match?.[1]) throw new Error('FACTORY_TENANT_REQUIRED');
-  return match[1];
+  const body=issue.body??'';
+  const heading=body.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim();
+  const legacy=body.match(/^Tenant:\s*(\S+)\s*$/mi)?.[1]?.trim();
+  const tenant=heading||legacy;
+  if (!tenant) throw new Error('FACTORY_TENANT_REQUIRED');
+  return tenant;
 }
 async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
