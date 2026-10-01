@@ -36,6 +36,19 @@ function customerDeliveryState(comments: FactoryComment[], runId: string): { sta
   return { state, failures };
 }
 
+function hasFreshRepairResult(comments: FactoryComment[], runId: string): boolean {
+  let lastFailure=-1;
+  for(let i=0;i<comments.length;i++){
+    const first=(comments[i].body??'').split('\n',1)[0]?.trim()??'';
+    if(first.startsWith(`FACTORY_CUSTOMER_DELIVERY_FAILED ${runId}`)) lastFailure=i;
+  }
+  if(lastFailure<0)return false;
+  return comments.slice(lastFailure+1).some((comment)=>{
+    const first=(comment.body??'').split('\n',1)[0]?.trim()??'';
+    return first===`FACTORY_ANTIGRAVITY_READY ${runId} customer-product`;
+  });
+}
+
 function latestRepairDiagnostics(comments: FactoryComment[], runId: string): string {
   const failures=comments.filter((comment)=>(comment.body??'').split('\n',1)[0]?.trim().startsWith(`FACTORY_CUSTOMER_DELIVERY_FAILED ${runId}`));
   const body=failures.at(-1)?.body??'';
@@ -307,7 +320,11 @@ const recovery: WatchdogRecoveryPort = {
               console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_DELIVERY_RETRY_EXHAUSTED', runId, target, failures: delivery.failures, at: new Date().toISOString() }));
               return;
             }
-            if (delivery.state === 'failed') {
+            if (delivery.state === 'failed' && !hasFreshRepairResult(comments,runId)) {
+              if (await hasActiveAntigravityBuild(runId)) {
+                console.log(JSON.stringify({ type: 'WATCHDOG_CUSTOMER_REPAIR_ALREADY_RUNNING', runId, target, at: new Date().toISOString() }));
+                return;
+              }
               const repairDiagnostics=latestRepairDiagnostics(comments,runId);
               await setFactoryStatus(issueNumber,'running');
               await dispatch('factory-antigravity-build',{runId,sourceRepository:repository,sourceIssue:issueNumber,targetRepository:target,buildSlice:sliceId,productIntent:productIntent(issue),repairDiagnostics});
