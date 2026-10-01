@@ -28,6 +28,8 @@ async function ensureCoreIdentitySchema(){
  await sql.unsafe("create unique index if not exists memberships_tenant_user_unique on memberships(tenant_id,user_id)");
  await sql.unsafe("create table if not exists sessions(id uuid primary key,user_id uuid not null references users(id) on delete cascade,token_hash text not null,expires_at timestamptz not null,revoked_at timestamptz,created_at timestamptz not null default now(),last_seen_at timestamptz)");
  await sql.unsafe("create unique index if not exists sessions_token_hash_unique on sessions(token_hash)");
+ await sql.unsafe("create table if not exists factory_runs(id text primary key,tenant_id uuid not null references organizations(id) on delete cascade,issue_number integer not null unique,name text not null,intent text not null,target_repository text not null,priority text not null default 'Normal',market text not null default '',language text not null default '',created_at timestamptz not null default now(),updated_at timestamptz not null default now(),unique(tenant_id,target_repository))");
+ await sql.unsafe("create index if not exists factory_runs_tenant_created_idx on factory_runs(tenant_id,created_at desc)");
 }
 void ensureCoreIdentitySchema().catch((error)=>console.error('IDENTITY_SCHEMA_BOOTSTRAP_FAILED',error));
 
@@ -369,10 +371,12 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
     if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
     const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
   } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
-  const body=`## Product intent\n\n${intent}\n\n## Target repository\n\`${targetRepository}\`\n\n## Product owner tenant\n${tenant}\n\n## Source\nProduct Owner Dashboard`;
+  const body=`Factory run metadata is stored authoritatively in PostgreSQL.\n\nProduct: ${productName}\nSource: Product Owner Dashboard`;
   const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
   const issue=await response.json() as Issue;
   const runId=`factory-work:${issue.number}`;
+  if(!sql) throw new Error('FACTORY_RUN_DATABASE_REQUIRED');
+  await sql`insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language) values(${runId},${tenant},${issue.number},${productName},${intent},${targetRepository},${typeof req.body?.priority==='string'?req.body.priority:'Normal'},${typeof req.body?.market==='string'?req.body.market:''},${typeof req.body?.language==='string'?req.body.language:''})`;
   const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
   await persistBrain(tenant,runId,'requirements',intake);
   await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
@@ -380,7 +384,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
-app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; const match=req.params.runId.match(/factory-work:(\d+)/); if(!match){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return} const [ir,cr]=await Promise.all([github(`/issues/${match[1]}`),github(`/issues/${match[1]}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const issueTenant=issue.body?.match(/## Product owner tenant\\s*\\n+([^\\n]+)/i)?.[1]?.trim(); if(issueTenant!==tenant){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const comments=await cr.json() as Comment[]; res.json({data:{id:req.params.runId,name:cleanName(issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]||issue.title),intent:issue.body?.match(/## Product intent\\s*\\n+([\\s\\S]*?)(?=\\n## |$)/i)?.[1]?.trim()||'',targetRepository:targetFromBody(issue.body),status:statusOf(issue),updatedAt:issue.updated_at,activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'live'}}); }catch(e){next(e)} });
+app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return} const rows=await sql`select id,issue_number,name,intent,target_repository,updated_at from factory_runs where id=${req.params.runId} and tenant_id=${tenant} limit 1`; const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const [ir,cr]=await Promise.all([github(`/issues/${run.issue_number}`),github(`/issues/${run.issue_number}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:String(run.id),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),status:statusOf(issue),updatedAt:String(run.updated_at),activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'postgres+github-evidence'}}); }catch(e){next(e)} });
 
 app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
  try{
