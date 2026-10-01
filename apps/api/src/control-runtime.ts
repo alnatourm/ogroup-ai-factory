@@ -366,6 +366,9 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res); if(!tenant)return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
+  const idempotencyKey=typeof req.header('idempotency-key')==='string'?req.header('idempotency-key')!.trim():'';
+  if(idempotencyKey.length>128){res.status(400).json({error:{code:'INVALID_IDEMPOTENCY_KEY'}});return}
+  if(idempotencyKey&&sql){const existing=await sql`select id,name,target_repository from factory_runs where tenant_id=${tenant} and idempotency_key=${idempotencyKey} limit 1`;if(existing[0]){res.status(200).json({data:{runId:String(existing[0].id),name:String(existing[0].name),targetRepository:String(existing[0].target_repository),status:'EXISTING'},meta:{idempotentReplay:true}});return}}
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
   const productName=cleanName(intent); const repositorySuffix=randomBytes(4).toString('hex'); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName).slice(0,44)}-${repositorySuffix}`;
   let targetRepository=`alnatourm/${repoName}`;
@@ -380,7 +383,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const issue=await response.json() as Issue;
   const runId=`factory-work:${issue.number}`;
   if(!sql) throw new Error('FACTORY_RUN_DATABASE_REQUIRED');
-  await sql`insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language) values(${runId},${tenant},${issue.number},${productName},${intent},${targetRepository},${typeof req.body?.priority==='string'?req.body.priority:'Normal'},${typeof req.body?.market==='string'?req.body.market:''},${typeof req.body?.language==='string'?req.body.language:''})`;
+  await sql`insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,idempotency_key) values(${runId},${tenant},${issue.number},${productName},${intent},${targetRepository},${typeof req.body?.priority==='string'?req.body.priority:'Normal'},${typeof req.body?.market==='string'?req.body.market:''},${typeof req.body?.language==='string'?req.body.language:''},${idempotencyKey||null})`;
   const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
   await persistBrain(tenant,runId,'requirements',intake);
   await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
