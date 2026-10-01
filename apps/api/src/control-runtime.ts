@@ -1,7 +1,8 @@
 import express from 'express';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, timingSafeEqual, randomBytes, randomUUID } from 'node:crypto';
+// signed callback primitives are intentionally server-only
 
 const databaseUrl=process.env.DATABASE_URL?.trim()??'';
 const sql=databaseUrl?postgres(databaseUrl,{max:5}):null;
@@ -388,7 +389,12 @@ app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=r
 
 app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
  try{
-  const supplied=req.header('x-factory-control-key'); if(!controlApiKey||supplied!==controlApiKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  const scope=req.header('x-factory-callback-scope')??'',timestamp=req.header('x-factory-callback-timestamp')??'',signature=req.header('x-factory-callback-signature')??'';
+  const epoch=Number(timestamp),fresh=Number.isFinite(epoch)&&Math.abs(Math.floor(Date.now()/1000)-epoch)<=300;
+  const digest=createHash('sha256').update(JSON.stringify(req.body??{})).digest('hex');
+  const expected=controlApiKey?createHmac('sha256',controlApiKey).update(`evidence:${timestamp}:${req.method}:${req.path}:${digest}`).digest('hex'):'';
+  const valid=scope==='evidence'&&fresh&&signature.length===expected.length&&expected.length>0&&timingSafeEqual(Buffer.from(signature),Buffer.from(expected));
+  if(!valid){res.status(401).json({error:{code:'UNAUTHORIZED_CALLBACK'}});return}
   const tenant=typeof req.body?.tenant==='string'?req.body.tenant.trim():''; const kind=req.body?.kind; const evidence=req.body?.evidence;
   if(!tenant||!['testing','deployment'].includes(kind)||!evidence||typeof evidence!=='object'){res.status(400).json({error:{code:'VALIDATION_ERROR'}});return}
   const issue=await ownedRun(tenant,req.params.runId); if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
