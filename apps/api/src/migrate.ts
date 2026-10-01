@@ -15,6 +15,8 @@ try{
   const legacy=await sql`select to_regclass('public.organizations') as organizations,to_regclass('public.factory_runtime_config') as runtime_config,to_regclass('public.factory_byok_vault') as byok,to_regclass('public.factory_runs') as runs`;
   if(legacy[0]?.organizations){
    const baseline=files.filter(name=>name<'0011_factory_permissions.sql');
+   const permissionsPresent=await sql`select to_regclass('public.permissions') as permissions`;
+   if(!permissionsPresent[0]?.permissions){const core=await readFile(resolve(migrationsDir,'0001_core_identity.sql'),'utf8');const missingCore=core.split(/;\s*(?:\n|$)/).map(x=>x.trim()).filter(Boolean).filter(stmt=>/^(create table|create unique index)/i.test(stmt)&&!/organizations|users|memberships/i.test(stmt));for(const stmt of missingCore)await sql.unsafe(stmt)}
    for(const name of baseline) await sql.unsafe('insert into schema_migrations(name) values($1) on conflict do nothing',[name]);
    console.log(JSON.stringify({type:'MIGRATION_BASELINE_RECORDED',count:baseline.length,evidence:{organizations:Boolean(legacy[0]?.organizations),runtimeConfig:Boolean(legacy[0]?.runtime_config),byok:Boolean(legacy[0]?.byok),runs:Boolean(legacy[0]?.runs)}}));
   }
