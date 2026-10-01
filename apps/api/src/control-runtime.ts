@@ -306,10 +306,10 @@ async function persistBrain(tenant:string,runId:string,section:BrainSection,cont
  const row=rows[0]; if(!row) throw new Error('PROJECT_BRAIN_UPSERT_FAILED'); return {section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()} satisfies BrainEntry;
 }
 async function ownedRun(tenant:string,runId:string):Promise<Issue|null>{
- const match=runId.match(/factory-work:(\d+)/); if(!match)return null;
- const response=await github(`/issues/${match[1]}`); const issue=await response.json() as Issue;
- const issueTenant=issue.body?.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim();
- return issueTenant===tenant?issue:null;
+ if(!sql)return null;
+ const rows=await sql`select issue_number from factory_runs where id=${runId} and tenant_id=${tenant} limit 1`;
+ const run=rows[0]; if(!run)return null;
+ const response=await github(`/issues/${Number(run.issue_number)}`); return await response.json() as Issue;
 }
 
 app.get('/api/v1/factory/runs/:runId/brain',async(req,res,next)=>{
