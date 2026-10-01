@@ -43,15 +43,21 @@ function latestRepairDiagnostics(comments: FactoryComment[], runId: string): str
   return line.slice('Repair-Diagnostics:'.length).trim().slice(0,12000);
 }
 
-function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
-  return comments.some((comment) => (comment.body ?? '').split('\n',1)[0]?.trim() === `FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
+function deploymentRequestCommit(comments: FactoryComment[], runId: string): string {
+  const request=comments.find((comment)=>(comment.body??'').split('\n',1)[0]?.trim()===`FACTORY_DEPLOYMENT_REQUESTED ${runId}`);
+  const line=(request?.body??'').split('\n').map((value)=>value.trim()).find((value)=>value.toLowerCase().startsWith('commit:'))??'';
+  return line.slice('Commit:'.length).trim();
 }
-async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment): Promise<void> {
+function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
+  return Boolean(deploymentRequestCommit(comments,runId));
+}
+async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment, requestedCommit: string): Promise<void> {
   if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
   const lines=(comment.body ?? '').split('\n').map((line)=>line.trim());
   const field=(name:string)=>lines.find((line)=>line.toLowerCase().startsWith(name.toLowerCase()+':'))?.slice(name.length+1).trim() ?? '';
   const commit=field('Commit'); const provider=field('Provider'); const url=field('URL');
-  if(!commit||!provider||!url) throw new Error('FACTORY_DEPLOYMENT_PROOF_INCOMPLETE');
+  if(!commit||!provider||!url||!requestedCommit) throw new Error('FACTORY_DEPLOYMENT_PROOF_INCOMPLETE');
+  if(commit!==requestedCommit) throw new Error('FACTORY_DEPLOYMENT_REQUEST_COMMIT_MISMATCH');
   const request=lines.find((line)=>line.startsWith('Verified-Commit:'))?.slice('Verified-Commit:'.length).trim() ?? '';
   if(request && request!==commit) throw new Error('FACTORY_DEPLOYMENT_COMMIT_MISMATCH');
   const response=await fetch(`${controlApiUrl.replace(/\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}/evidence`,{
@@ -275,7 +281,7 @@ const recovery: WatchdogRecoveryPort = {
               console.log(JSON.stringify({ type: 'WATCHDOG_AWAITING_DEPLOYMENT_PROOF', runId, target, requested: hasDeploymentRequest(comments, runId), at: new Date().toISOString() }));
               return;
             }
-            await persistDeploymentProof(runId, tenantFromIssue(issue), target, proof);
+            await persistDeploymentProof(runId, tenantFromIssue(issue), target, proof, deploymentRequestCommit(comments,runId));
           }
           await completeFactoryIssue(issueNumber, runId, target);
           return;
