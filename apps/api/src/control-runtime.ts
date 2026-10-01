@@ -390,7 +390,7 @@ app.get('/internal/v1/factory/runs/:runId',async(req,res,next)=>{
  try{
   const supplied=req.header('x-factory-control-key'); if(!controlApiKey||supplied!==controlApiKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
   if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
-  const rows=await sql\`select id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,updated_at from factory_runs where id=\${req.params.runId} limit 1\`;
+  const rows=await sql`select id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,updated_at from factory_runs where id=${req.params.runId} limit 1`;
   const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
   res.json({data:{id:String(run.id),tenantId:String(run.tenant_id),issueNumber:Number(run.issue_number),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),priority:String(run.priority),market:String(run.market),language:String(run.language),updatedAt:String(run.updated_at)}});
  }catch(e){next(e)}
