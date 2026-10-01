@@ -105,12 +105,6 @@ function nextDashboardSlice(done: Set<string>): string | null {
   return DASHBOARD_SLICES.find((slice) => !done.has(slice)) ?? null;
 }
 
-function productIntent(issue: FactoryIssue): string {
-  const body=issue.body??'';
-  const heading=body.match(/## Product intent\s*\n+([\s\S]*?)(?=\n## |$)/i)?.[1]?.trim();
-  const legacy=body.match(/(?:^|\n)Product intent:\s*(.+)/i)?.[1]?.trim();
-  return heading||legacy||'';
-}
 
 function isDashboardTarget(target: string): boolean {
   return target.toLowerCase()==='alnatourm/ai-factory-dashboard';
@@ -200,31 +194,6 @@ async function trustedRunMetadata(runId:string):Promise<TrustedRunMetadata>{
   return payload.data;
 }
 
-function targetRepository(issue: FactoryIssue): string | null {
-  const body = issue.body ?? '';
-  const canonical = body.match(/^Target-Repository:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\s*$/mi);
-  if (canonical?.[1]) return canonical[1];
-
-  const lines = body.split(/\r?\n/);
-  for (let index = 0; index < lines.length; index += 1) {
-    if (/^#{1,6}\s*Target repository\s*$/i.test(lines[index]?.trim() ?? '')) {
-      for (let valueIndex = index + 1; valueIndex < lines.length; valueIndex += 1) {
-        const candidate = (lines[valueIndex] ?? '').trim().replace(/^\x60|\x60$/g, '');
-        if (!candidate) continue;
-        return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(candidate) ? candidate : null;
-      }
-    }
-  }
-  return null;
-}
-function tenantFromIssue(issue: FactoryIssue): string {
-  const body=issue.body??'';
-  const heading=body.match(/## Product owner tenant\s*\n+([^\n]+)/i)?.[1]?.trim();
-  const legacy=body.match(/^Tenant:\s*(\S+)\s*$/mi)?.[1]?.trim();
-  const tenant=heading||legacy;
-  if (!tenant) throw new Error('FACTORY_TENANT_REQUIRED');
-  return tenant;
-}
 async function hasActiveAntigravityBuild(runId: string): Promise<boolean> {
   const response = await github('/actions/workflows/factory-antigravity-target-build.yml/runs?status=in_progress&per_page=30');
   const runs = await response.json() as { workflow_runs?: Array<{ id: number }> };
@@ -263,7 +232,7 @@ async function completeFactoryIssue(issueNumber: number, runId: string, target: 
 
 async function setFactoryStatus(issueNumber: number, status: 'running'|'verifying'|'waiting-dependency'|'waiting-human'|'completed'): Promise<void> {
   const response = await github(`/issues/${issueNumber}`);
-  const issue = await response.json() as FactoryIssue;
+  void await response.json() as FactoryIssue;
   const labels = (issue.labels ?? []).map((label) => label.name).filter((name): name is string => Boolean(name)).filter((name) => !name.startsWith('factory-status:'));
   labels.push('factory-work', `factory-status:${status}`);
   await github(`/issues/${issueNumber}/labels`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ labels: [...new Set(labels)] }) });
@@ -297,7 +266,7 @@ const recovery: WatchdogRecoveryPort = {
     if (runId.startsWith('factory-work:')) {
       const issueNumber = Number(runId.split(':')[1]);
       const response = await github(`/issues/${issueNumber}`);
-      const issue = await response.json() as FactoryIssue;
+      void await response.json() as FactoryIssue;
       const trustedRun = await trustedRunMetadata(runId);
       if (trustedRun.issueNumber !== issueNumber) throw new Error('FACTORY_RUN_ISSUE_MISMATCH');
       const target = trustedRun.targetRepository;
