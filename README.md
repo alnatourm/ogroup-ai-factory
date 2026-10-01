@@ -258,3 +258,32 @@ Current completion lane:
 6. Run the full production acceptance journey and repair every failure before declaring the SaaS complete.
 
 The recurring builder loop must continue inspect -> implement -> test -> repair -> exact-head verify -> merge -> deploy -> production verify -> README/status update -> next task. Queued CI or deployment is not a stopping point when independent work remains.
+
+
+## Production hardening status
+
+The Factory remains in **Direct Builder Mode** until the complete SaaS journey is production-proven. Passing CI is evidence, not the finish line.
+
+### Verified fixes
+- First-owner Google bootstrap is serialized with a PostgreSQL transaction advisory lock and rechecks identity state inside the transaction before provisioning.
+- Production control API now fails closed unless `FACTORY_REQUIRE_AUTH=true`.
+- Run-detail and human-gate run-id parsing has been repaired so authenticated Design Approval and Product Review routes can operate.
+
+### Release-blocking hardening queue
+The SaaS is **not production-accepted** until these are implemented and verified:
+1. Move canonical run metadata, tenant ownership, and target repository identity into PostgreSQL. Never derive authorization or delivery targets from free-text GitHub issue bodies.
+2. Generate collision-safe repository identities and validate every target repository against the stored tenant/run record.
+3. Split generated-code verification from privileged delivery. Untrusted `npm`/`pip` install, test, lint, and build steps must run with no customer write token or Factory callback secret. Privileged push/deployment must occur in a separate trusted job, preferably with per-repository GitHub App credentials.
+4. Add tenant membership roles and explicit permissions for BYOK management, Factory configuration, run creation, design approval, and production approval.
+5. Replace the single all-powerful Factory control credential with scoped internal credentials and authenticated/signed callbacks. Google identity exchange must rely only on a caller that verifies issuer, audience, signature, expiry, and `email_verified`.
+6. Remove GitHub issues as the canonical multi-tenant run database. Issues may remain an audit/integration surface, but PostgreSQL owns tenant truth, pagination, quotas, and run state.
+7. Add per-tenant project/repository quotas and idempotent run creation with compensating cleanup for partial GitHub failures.
+8. Make builds reproducible with committed lockfiles and immutable dependency installation.
+9. Move runtime DDL into versioned migrations and remove request-path `create table if not exists`.
+10. Harden BYOK encryption with versioned key material and authenticated tenant/credential binding, then prove server-side decrypt/use without exposing secrets to the browser.
+11. Harden proxy, CSRF, rate limiting, malformed JSON handling, CORS, permission errors, and authentication timing behavior.
+12. Block sensitive generated paths consistently, including `.env` and equivalent secret/config files, before generated payloads reach delivery.
+13. Prove the complete production journey: sign in → create product → Project Brain → design gate → build → secret-free verification → repair → production gate → privileged deployment → public live verification → durable deployment evidence → usage/quota/billing.
+
+### Acceptance rule
+A run is not complete because a workflow is green. Completion requires tenant-safe durable state, verified artifacts, authorized human gates, exact-commit verification, successful deployment, public live proof, and persisted evidence.
