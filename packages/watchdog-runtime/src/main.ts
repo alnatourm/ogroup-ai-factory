@@ -57,7 +57,7 @@ function deploymentRequest(comments: FactoryComment[], runId: string): {commit:s
   return commit&&repository?{commit,repository}:null;
 }
 function hasDeploymentRequest(comments: FactoryComment[], runId: string): boolean {
-  return Boolean(deploymentRequestCommit(comments,runId));
+  return Boolean(deploymentRequest(comments,runId));
 }
 async function persistDeploymentProof(runId: string, tenant: string, target: string, comment: FactoryComment, requestedCommit: string): Promise<void> {
   if (!controlApiUrl || !controlApiKey) throw new Error('FACTORY_DEPLOYMENT_EVIDENCE_CALLBACK_NOT_CONFIGURED');
