@@ -27,7 +27,7 @@ async function ensureCoreIdentitySchema(){
  await sql.unsafe("create table if not exists sessions(id uuid primary key,user_id uuid not null references users(id) on delete cascade,token_hash text not null,expires_at timestamptz not null,revoked_at timestamptz,created_at timestamptz not null default now(),last_seen_at timestamptz)");
  await sql.unsafe("create unique index if not exists sessions_token_hash_unique on sessions(token_hash)");
 }
-const schemaReady=ensureCoreIdentitySchema();
+void ensureCoreIdentitySchema().catch((error)=>console.error('IDENTITY_SCHEMA_BOOTSTRAP_FAILED',error));
 
 async function github(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`https://api.github.com/repos/${repository}${path}`, {
