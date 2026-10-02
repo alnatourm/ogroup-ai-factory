@@ -356,6 +356,9 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  try{
   const tenant=requireTenant(req,res); if(!tenant)return; if(!(await requirePermission(req,res,'factory.run.create')))return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
+  const railwayProjectId=typeof req.body?.railwayProjectId==='string'?req.body.railwayProjectId.trim():'';
+  const railwayServiceId=typeof req.body?.railwayServiceId==='string'?req.body.railwayServiceId.trim():'';
+  if(Boolean(railwayProjectId)!==Boolean(railwayServiceId)){res.status(400).json({error:{code:'INCOMPLETE_DEPLOYMENT_TARGET',message:'Railway project and service must be configured together.'}});return}
   const idempotencyKey=typeof req.header('idempotency-key')==='string'?req.header('idempotency-key')!.trim():'';
   if(!idempotencyKey){res.status(400).json({error:{code:'IDEMPOTENCY_KEY_REQUIRED'}});return}
   if(idempotencyKey.length>128){res.status(400).json({error:{code:'INVALID_IDEMPOTENCY_KEY'}});return}
@@ -395,7 +398,7 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
    const issue=await response.json() as Issue; issueNumber=issue.number;
    const runId=`factory-work:${issue.number}`;
    await sql.begin(async tx=>{
-    await tx.unsafe("insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[runId,tenant,issue.number,productName,intent,targetRepository,typeof req.body?.priority==='string'?req.body.priority:'Normal',typeof req.body?.market==='string'?req.body.market:'',typeof req.body?.language==='string'?req.body.language:'',idempotencyKey]);
+    await tx.unsafe("insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,idempotency_key,railway_project_id,railway_service_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",[runId,tenant,issue.number,productName,intent,targetRepository,typeof req.body?.priority==='string'?req.body.priority:'Normal',typeof req.body?.market==='string'?req.body.market:'',typeof req.body?.language==='string'?req.body.language:'',idempotencyKey,railwayProjectId||null,railwayServiceId||null]);
     await tx.unsafe("update factory_run_requests set state='ready',run_id=$3,issue_number=$4,target_repository=$5,last_error=null,updated_at=now() where tenant_id=$1 and idempotency_key=$2",[tenant,idempotencyKey,runId,issue.number,targetRepository]);
    });
    const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
@@ -412,15 +415,28 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
+app.put('/api/v1/factory/runs/:runId/deployment-target',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.config.manage')))return;
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const railwayProjectId=typeof req.body?.railwayProjectId==='string'?req.body.railwayProjectId.trim():'';
+  const railwayServiceId=typeof req.body?.railwayServiceId==='string'?req.body.railwayServiceId.trim():'';
+  if(!railwayProjectId||!railwayServiceId){res.status(400).json({error:{code:'DEPLOYMENT_TARGET_REQUIRED'}});return}
+  const rows=await sql`update factory_runs set railway_project_id=${railwayProjectId},railway_service_id=${railwayServiceId},updated_at=now() where id=${req.params.runId} and tenant_id=${tenant} returning id`;
+  if(!rows[0]){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  res.json({data:{runId:req.params.runId,provider:'railway',railwayProjectId,railwayServiceId},meta:{source:'postgres'}});
+ }catch(e){next(e)}
+});
+
 app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return} const rows=await sql`select id,issue_number,name,intent,target_repository,updated_at from factory_runs where id=${req.params.runId} and tenant_id=${tenant} limit 1`; const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const [ir,cr]=await Promise.all([github(`/issues/${run.issue_number}`),github(`/issues/${run.issue_number}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:String(run.id),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),status:statusOf(issue),updatedAt:String(run.updated_at),activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'postgres+github-evidence'}}); }catch(e){next(e)} });
 
 app.get('/internal/v1/factory/runs/:runId',async(req,res,next)=>{
  try{
   const supplied=req.header('x-factory-control-key'); if(!controlApiKey||supplied!==controlApiKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
   if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
-  const rows=await sql`select id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,updated_at from factory_runs where id=${req.params.runId} limit 1`;
+  const rows=await sql`select id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,railway_project_id,railway_service_id,updated_at from factory_runs where id=${req.params.runId} limit 1`;
   const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
-  res.json({data:{id:String(run.id),tenantId:String(run.tenant_id),issueNumber:Number(run.issue_number),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),priority:String(run.priority),market:String(run.market),language:String(run.language),updatedAt:String(run.updated_at)}});
+  res.json({data:{id:String(run.id),tenantId:String(run.tenant_id),issueNumber:Number(run.issue_number),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),priority:String(run.priority),market:String(run.market),language:String(run.language),railwayProjectId:run.railway_project_id?String(run.railway_project_id):null,railwayServiceId:run.railway_service_id?String(run.railway_service_id):null,updatedAt:String(run.updated_at)}});
  }catch(e){next(e)}
 });
 
