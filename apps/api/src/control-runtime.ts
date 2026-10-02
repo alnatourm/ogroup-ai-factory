@@ -187,19 +187,14 @@ interface FactoryConfig {
  agents:Array<{id:string;name:string;kind:'ogroup'|'external'|'custom'|'webhook'|'mcp';endpointRef?:string;enabled:boolean}>;
  roles:Array<{role:string;agentId:string;modelId?:string;fallbackModelId?:string;budgetLimitMicros?:number}>;
 }
-const factoryConfigs=new Map<string,FactoryConfig>();
-function configFor(tenant:string):FactoryConfig {
- const existing=factoryConfigs.get(tenant); if(existing)return existing;
- const initial:FactoryConfig={mode:'managed',providers:[],models:[],agents:[],roles:[]}; factoryConfigs.set(tenant,initial); return initial;
-}
 async function loadConfig(tenant:string):Promise<FactoryConfig>{
- if(!sql)return configFor(tenant);
+ if(!sql)throw new Error('FACTORY_CONFIG_DATABASE_REQUIRED');
  const rows=await sql`select config_json from factory_runtime_config where tenant_id=${tenant}`;
  if(!rows[0])return {mode:'managed',providers:[],models:[],agents:[],roles:[]};
  return JSON.parse(String(rows[0].config_json)) as FactoryConfig;
 }
 async function persistConfig(tenant:string,input:FactoryConfig){
- if(!sql){factoryConfigs.set(tenant,input);return 'memory-fallback'}
+ if(!sql)throw new Error('FACTORY_CONFIG_DATABASE_REQUIRED')
  const payload=JSON.stringify(input);
  await sql`insert into factory_runtime_config (tenant_id,config_json,updated_at) values (${tenant},${payload},now())
  on conflict (tenant_id) do update set config_json=excluded.config_json,updated_at=now()`;
@@ -213,7 +208,7 @@ function configInput(body:unknown):FactoryConfig|null {
 
 app.get('/api/v1/factory/config',async(req,res)=>{
  const tenant=requireTenant(req,res); if(!tenant)return;
- res.json({data:await loadConfig(tenant),meta:{source:sql?'postgres':'memory-fallback'}});
+ res.json({data:await loadConfig(tenant),meta:{source:'postgres'}});
 });
 
 app.put('/api/v1/factory/config',async(req,res)=>{
@@ -269,10 +264,8 @@ app.put('/api/v1/factory/account/memberships/:membershipId/roles',async(req,res,
 const BRAIN_SECTIONS=['requirements','business_rules','architecture','decisions','approved_designs','tasks','known_issues','testing_evidence','deployment_history'] as const;
 type BrainSection=typeof BRAIN_SECTIONS[number];
 interface BrainEntry { section:BrainSection; content:unknown; version:number; updatedAt:string }
-const projectBrains=new Map<string,Map<string,BrainEntry>>();
-function brainKey(tenant:string,runId:string){return `${tenant}:${runId}`}
 async function loadBrain(tenant:string,runId:string){
- if(!sql)return projectBrains.get(brainKey(tenant,runId));
+ if(!sql)throw new Error('PROJECT_BRAIN_DATABASE_REQUIRED');
  const rows=await sql`select section,content_json,version,updated_at from factory_runtime_brain where tenant_id=${tenant} and run_id=${runId}`;
  const brain=new Map<string,BrainEntry>();
  for(const row of rows) brain.set(String(row.section),{section:row.section as BrainSection,content:JSON.parse(String(row.content_json)),version:Number(row.version),updatedAt:new Date(row.updated_at as string).toISOString()});
@@ -302,7 +295,7 @@ app.get('/api/v1/factory/runs/:runId/brain',async(req,res,next)=>{
 app.put('/api/v1/factory/runs/:runId/brain/:section',async(req,res,next)=>{
  try{const tenant=requireTenant(req,res);if(!tenant)return;const section=req.params.section as BrainSection;if(!BRAIN_SECTIONS.includes(section)){res.status(400).json({error:{code:'INVALID_BRAIN_SECTION'}});return}
  const issue=await ownedRun(tenant,req.params.runId);if(!issue){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
- const persisted=await persistBrain(tenant,req.params.runId,section,req.body?.content??null);if(persisted){res.json({data:persisted,meta:{source:'postgres'}});return} const key=brainKey(tenant,req.params.runId);const brain=projectBrains.get(key)??new Map<string,BrainEntry>();const current=brain.get(section);const entry:BrainEntry={section,content:req.body?.content??null,version:(current?.version??0)+1,updatedAt:new Date().toISOString()};brain.set(section,entry);projectBrains.set(key,brain);res.json({data:entry,meta:{source:'memory-fallback'}})
+ const persisted=await persistBrain(tenant,req.params.runId,section,req.body?.content??null);if(!persisted)throw new Error('PROJECT_BRAIN_DATABASE_REQUIRED');res.json({data:persisted,meta:{source:'postgres'}})
  }catch(e){next(e)}
 });
 
