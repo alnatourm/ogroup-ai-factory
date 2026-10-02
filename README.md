@@ -368,3 +368,26 @@ Remaining acceptance work is evidence, not architectural guesswork:
 6. Re-run the complete production customer journey and update this README with the exact final Factory and Dashboard production SHAs and evidence before declaring the SaaS complete.
 
 The AI Factory remains the product. Direct Builder Mode remains active until the acceptance rule above is satisfied.
+
+
+## Direct Builder completion update - 2026-10-02 (final code pass)
+
+This pass removed additional code-side blockers without using the Factory to build itself:
+
+- Closed stale open PRs #65, #105, #136, #143, #208, #220 and #221 so obsolete pre-hardening architecture cannot be accidentally merged back into the release line.
+- Factory PR #241 added canonical per-run Railway project/service targets. The customer deployment worker already required these IDs; Watchdog now receives them from trusted PostgreSQL run metadata and dispatches them. Missing deployment targets remain `waiting-dependency` instead of producing false deployment success.
+- Migration `0016_run_deployment_targets.sql` applied successfully in production. Factory Control API and Watchdog reached Railway SUCCESS on exact SHA `2eed1b6285cfa83f6814488d54370717cb684c92`.
+- Dashboard PR #87 made Create Product send a stable `Idempotency-Key` across retries. Dashboard PR #88 fixed the authenticated server proxy so that header is preserved all the way to the Factory API. Dashboard exact SHA `80ce1db32aa2a020db7a346821dcdd63450f6895` reached Railway SUCCESS.
+- Factory PR #242 removed the remaining in-process persistence fallbacks for Factory configuration and Project Brain. These canonical SaaS records now fail closed when PostgreSQL is unavailable rather than pretending ephemeral memory is durable state. Exact SHA `d06d201b4439a2db80fd9418fad5223284a06f5a` reached Railway SUCCESS for Control API and Watchdog.
+- Factory PR #243 upgrades new BYOK vault writes to AES-256-GCM authenticated encryption with AAD bound to key version, tenant, credential reference and provider. Version-1 records remain readable for migration compatibility; new writes are version 2 and cannot be transplanted across tenant/credential/provider context without authentication failure.
+
+### What remains outside code-only completion
+
+The repositories are now at the point where the remaining acceptance items require real environment/customer evidence rather than more speculative code:
+
+1. The disposable Build For Me run must have a real customer Railway project/service target and the configured GitHub/Railway delivery credentials. The system now fails closed and surfaces `waiting-dependency` if that target is absent.
+2. Build With My AI / BYOK must be exercised with a safe real test credential/provider selected by the Product Owner. No provider secret may be invented, copied into README, or exposed to the browser.
+3. Commercial subscription synchronization requires a real billing provider and configured commercial plans/prices. The code must not fabricate provider events, subscriptions or pricing.
+4. The final production acceptance journey still requires an authenticated Product Owner session and human design/production approvals, followed by exact-commit public live proof and durable evidence.
+
+Do not reinterpret these external evidence requirements as unfinished Factory self-build work. Direct Builder Mode remains the operating rule for any future code repair.
