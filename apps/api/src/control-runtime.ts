@@ -92,7 +92,7 @@ app.use('/api/v1/factory',async(req,res,next)=>{
    const tokenHash=createHash('sha256').update(bearer).digest('hex');
    const sessions=await sql`select user_id from sessions where token_hash=${tokenHash} and revoked_at is null and expires_at>now() limit 1`;
    if(!sessions[0]){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
-   const memberships=await sql`select tenant_id from memberships where user_id=${sessions[0].user_id} order by created_at asc,id asc limit 1`;
+   const memberships=await sql`select id,tenant_id from memberships where user_id=${sessions[0].user_id} order by created_at asc,id asc limit 1`;
    if(!memberships[0]){res.status(403).json({error:{code:'MEMBERSHIP_NOT_PROVISIONED'}});return}
    resTenant.set(req,String(memberships[0].tenant_id)); requestAuth.set(req,{userId:String(sessions[0].user_id),membershipId:String(memberships[0].id),internal:false}); next();
   }catch(e){next(e)}
