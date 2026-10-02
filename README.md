@@ -344,3 +344,27 @@ ChatGPT / GPT-5.6 Sol is the direct master builder and development manager. The 
 
 ### Completion rule
 Do not call the SaaS finished merely because CI is green. Completion requires exact-head CI, merged exact SHA, Railway SUCCESS for the deployed exact SHA, tenant-safe durable state, verified customer artifacts, authorized human gates, exact-commit deployment, public live verification, durable evidence, and the complete production customer journey passing. Continue inspect -> implement -> test -> repair -> exact-head verify -> merge -> deploy -> production verify -> README update -> next until that acceptance condition is met.
+
+
+## Direct Builder completion update - 2026-10-02 (afternoon)
+
+Direct-builder verification completed after the morning handoff:
+
+- Durable run creation is now PostgreSQL-backed and tenant/idempotency-key scoped. Concurrent retries serialize, idempotency-key intent conflicts are rejected, partial GitHub issue/repository creation is compensated, and reserved project quota is released when creation does not commit.
+- PR #238 exact-head quality verification passed before merge. Factory main advanced to `1a84f73f50f649e1e86680a2bf37c116804dd77a`.
+- Railway deployed that exact SHA successfully to both Factory Control API and Watchdog.
+- Production pre-deploy migration applied `0014_run_creation_saga.sql` and reported all 15 migrations ready.
+- Production Control API reported `FACTORY_CONTROL_READY`, and the authenticated production snapshot path returned HTTP 200.
+- Account administration had a real RBAC reachability defect: routes required `factory.account.manage` but the permission seed did not contain that key. Migration `0015_account_management_permission.sql` now seeds it and grants it to existing tenant Owner roles. PR #239 passed exact-head lint, typecheck, tests and build before merge. Factory main is now `633c6ee642ef3136a9c965ea68f5c5cad9e4ce6d`; exact-SHA Railway verification is the active deployment check.
+- Stale older PRs that regress current security architecture are not part of the release path. In particular, generated-code verification remains separated from privileged delivery and Node verification remains lockfile-required.
+
+Remaining acceptance work is evidence, not architectural guesswork:
+
+1. Verify Railway SUCCESS and migration 0015 application for exact Factory main `633c6ee642ef3136a9c965ea68f5c5cad9e4ce6d`.
+2. Exercise workspace account administration through authenticated tenant RBAC.
+3. Exercise Build For Me end to end on a disposable customer project through design gate, secret-free verification, production gate, exact-commit deployment, public live verification and durable deployment evidence.
+4. Exercise Build With My AI / BYOK using a safe non-sensitive test provider/credential path. Do not expose customer secrets.
+5. Verify commercial subscription/provider synchronization only when a real billing provider and commercial plan values are configured. Do not invent prices, provider events or subscription success.
+6. Re-run the complete production customer journey and update this README with the exact final Factory and Dashboard production SHAs and evidence before declaring the SaaS complete.
+
+The AI Factory remains the product. Direct Builder Mode remains active until the acceptance rule above is satisfied.
