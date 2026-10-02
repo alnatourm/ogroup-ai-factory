@@ -404,8 +404,8 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
    quotaCommitted=true;res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
   }catch(error){
    const message=error instanceof Error?error.message:'RUN_CREATION_FAILED';
-   if(issueNumber!==null){try{await github(`/issues/${issueNumber}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:'closed',state_reason:'not_planned'})})}catch{}}
-   if(repoCreated&&targetRepository){try{await fetch(`https://api.github.com/repos/${targetRepository}`,{method:'DELETE',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}})}catch{}}
+   if(issueNumber!==null){try{await github(`/issues/${issueNumber}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:'closed',state_reason:'not_planned'})})}catch(compensationError){console.error('RUN_CREATION_ISSUE_COMPENSATION_FAILED',{tenant,idempotencyKey,issueNumber,error:compensationError})}}
+   if(repoCreated&&targetRepository){try{await fetch(`https://api.github.com/repos/${targetRepository}`,{method:'DELETE',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}})}catch(compensationError){console.error('RUN_CREATION_REPOSITORY_COMPENSATION_FAILED',{tenant,idempotencyKey,targetRepository,error:compensationError})}}
    await sql`update factory_run_requests set state='failed',last_error=${message.slice(0,500)},updated_at=now() where tenant_id=${tenant} and idempotency_key=${idempotencyKey}`;
    throw error;
   }finally{if(!quotaCommitted)await releaseProjectQuota(tenant,quota.periodKey)}
