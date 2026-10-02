@@ -387,6 +387,16 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
 
 app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return} const rows=await sql`select id,issue_number,name,intent,target_repository,updated_at from factory_runs where id=${req.params.runId} and tenant_id=${tenant} limit 1`; const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const [ir,cr]=await Promise.all([github(`/issues/${run.issue_number}`),github(`/issues/${run.issue_number}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:String(run.id),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),status:statusOf(issue),updatedAt:String(run.updated_at),activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'postgres+github-evidence'}}); }catch(e){next(e)} });
 
+app.get('/internal/v1/factory/runs/:runId',async(req,res,next)=>{
+ try{
+  const supplied=req.header('x-factory-control-key'); if(!controlApiKey||supplied!==controlApiKey){res.status(401).json({error:{code:'UNAUTHORIZED'}});return}
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const rows=await sql`select id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,updated_at from factory_runs where id=${req.params.runId} limit 1`;
+  const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  res.json({data:{id:String(run.id),tenantId:String(run.tenant_id),issueNumber:Number(run.issue_number),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),priority:String(run.priority),market:String(run.market),language:String(run.language),updatedAt:String(run.updated_at)}});
+ }catch(e){next(e)}
+});
+
 app.post('/internal/v1/factory/runs/:runId/evidence',async(req,res,next)=>{
  try{
   const scope=req.header('x-factory-callback-scope')??'',timestamp=req.header('x-factory-callback-timestamp')??'',signature=req.header('x-factory-callback-signature')??'';
