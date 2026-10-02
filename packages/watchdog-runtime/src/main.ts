@@ -184,7 +184,7 @@ const state: WatchdogStatePort = {
 };
 
 
-interface TrustedRunMetadata { id:string; tenantId:string; issueNumber:number; name:string; intent:string; targetRepository:string }
+interface TrustedRunMetadata { id:string; tenantId:string; issueNumber:number; name:string; intent:string; targetRepository:string; railwayProjectId:string|null; railwayServiceId:string|null }
 async function trustedRunMetadata(runId:string):Promise<TrustedRunMetadata>{
   if(!controlApiUrl||!controlApiKey) throw new Error('FACTORY_RUN_METADATA_API_NOT_CONFIGURED');
   const response=await fetch(`${controlApiUrl.replace(/\\\/$/,'')}/internal/v1/factory/runs/${encodeURIComponent(runId)}`,{headers:{'x-factory-control-key':controlApiKey}});
@@ -285,7 +285,8 @@ const recovery: WatchdogRecoveryPort = {
               const request=deploymentRequest(comments,runId);
               if(request && !hasDeploymentStarted(comments,runId)) {
                 await github(`/issues/${issueNumber}/comments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:`FACTORY_DEPLOYMENT_STARTED ${runId}\nRepository: ${request.repository}\nCommit: ${request.commit}\nProvider: railway`})});
-                await dispatch('factory-customer-deploy',{runId,sourceIssue:issueNumber,targetRepository:request.repository,commit:request.commit});
+                if(!trustedRun.railwayProjectId||!trustedRun.railwayServiceId){await setFactoryStatus(issueNumber,'waiting-dependency');console.log(JSON.stringify({type:'WATCHDOG_DEPLOYMENT_TARGET_REQUIRED',runId,target,at:new Date().toISOString()}));return}
+                await dispatch('factory-customer-deploy',{runId,sourceIssue:issueNumber,targetRepository:request.repository,commit:request.commit,railwayProjectId:trustedRun.railwayProjectId,railwayServiceId:trustedRun.railwayServiceId});
                 console.log(JSON.stringify({type:'WATCHDOG_DEPLOYMENT_DISPATCHED',runId,target,commit:request.commit,provider:'railway',at:new Date().toISOString()}));
                 return;
               }
