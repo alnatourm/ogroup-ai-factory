@@ -303,3 +303,44 @@ Latest directly implemented hardening:
 - Persistence smoke Railway variables are wired through Railway references rather than copied secret values.
 
 Production acceptance remains evidence-driven. Do not call the SaaS complete until the current exact Factory and Dashboard main SHAs both reach Railway SUCCESS and the disposable Build For Me and safe Build With My AI journeys produce durable live deployment evidence.
+
+
+## Direct Builder handoff - 2026-10-02
+
+### Operating rule
+ChatGPT / GPT-5.6 Sol is the direct master builder and development manager. The AI Factory is the product being built and MUST NOT be used to build itself. Preserve the existing repositories and continue directly through GitHub, CI, Railway and PostgreSQL. Do not restart from scratch and do not dispatch product-development work back to unfinished Factory agents.
+
+### Production state verified on 2026-10-02
+- Factory repository main: `f71b26396f58e89d301247ff7ad29b223651483e`.
+- Factory Control API Railway deployment for that exact SHA: SUCCESS.
+- Dashboard repository main: `cff0fb05fa5af3cb9d24032a699f38c80f68d2d9`.
+- Dashboard Railway deployment for that exact SHA: SUCCESS.
+- Factory canonical run metadata and tenant ownership are PostgreSQL-backed. Watchdog trusts PostgreSQL run metadata rather than editable issue text.
+- Customer repository identities are collision-safe.
+- Human design/production gates and Project Brain ownership are tenant-bound to canonical run state.
+- Runtime persistence tables have versioned migrations; commercial SaaS persistence includes plans, subscriptions, workspace invitations, quotas and billing events.
+- Explicit Factory RBAC permissions exist for run creation, design/production gates, configuration, BYOK and billing/account administration.
+- Commercial project and AI usage quotas are atomically enforced.
+- BYOK has versioned authenticated encryption and server-side provider connection execution without returning secrets to the browser.
+- Generated-code verification is separated from privileged delivery; Node verification requires a committed lockfile.
+- Railway deployment is exact-commit-bound, retry-capped and requires public live verification before durable deployment proof.
+- Internal evidence callbacks are scoped and HMAC-signed.
+- Dashboard Settings and Usage & Billing are connected to live tenant/commercial APIs.
+
+### Current active lane
+- Finish/merge any still-open security hardening that supersedes older duplicate PRs, especially the latest generated-code secret-isolation change.
+- Remove remaining GitHub-issue-derived authorization/discovery paths. PostgreSQL is canonical; GitHub is evidence/audit only.
+- Finish durable idempotent run creation, compensating cleanup for partial repository/issue failures and tenant project/repository quotas.
+- Finish migration ownership by removing remaining request-path DDL after production migrations are confirmed applied.
+- Complete commercial onboarding/subscription/billing-provider synchronization without inventing prices or provider assumptions.
+- Prove Build For Me end to end on a disposable customer project.
+- Prove Build With My AI / BYOK end to end using safe non-sensitive test credentials or a mock provider.
+- Run the complete production acceptance journey: sign in -> create product -> Project Brain -> design approval -> build -> secret-free verification -> repair -> production approval -> privileged exact-commit deployment -> public live proof -> durable deployment evidence -> usage/quota/billing.
+
+### External configuration that must remain fail-closed
+- Real customer Railway deployment requires the appropriate Railway API credential in GitHub Actions, set directly in GitHub/Railway rather than pasted into chat.
+- Private target repository delivery requires its configured GitHub credential/app installation.
+- Google production sign-in requires Dashboard Google OIDC client configuration and authorized callback/origin. These external credentials must never be exposed in chat or browser-side `VITE_*` variables.
+
+### Completion rule
+Do not call the SaaS finished merely because CI is green. Completion requires exact-head CI, merged exact SHA, Railway SUCCESS for the deployed exact SHA, tenant-safe durable state, verified customer artifacts, authorized human gates, exact-commit deployment, public live verification, durable evidence, and the complete production customer journey passing. Continue inspect -> implement -> test -> repair -> exact-head verify -> merge -> deploy -> production verify -> README update -> next until that acceptance condition is met.
