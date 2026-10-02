@@ -357,30 +357,57 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
   const tenant=requireTenant(req,res); if(!tenant)return; if(!(await requirePermission(req,res,'factory.run.create')))return;
   const intent=typeof req.body?.intent==='string'?req.body.intent.trim():'';
   const idempotencyKey=typeof req.header('idempotency-key')==='string'?req.header('idempotency-key')!.trim():'';
+  if(!idempotencyKey){res.status(400).json({error:{code:'IDEMPOTENCY_KEY_REQUIRED'}});return}
   if(idempotencyKey.length>128){res.status(400).json({error:{code:'INVALID_IDEMPOTENCY_KEY'}});return}
-  if(idempotencyKey&&sql){const existing=await sql`select id,name,target_repository from factory_runs where tenant_id=${tenant} and idempotency_key=${idempotencyKey} limit 1`;if(existing[0]){res.status(200).json({data:{runId:String(existing[0].id),name:String(existing[0].name),targetRepository:String(existing[0].target_repository),status:'EXISTING'},meta:{idempotentReplay:true}});return}}
   if(intent.length<16){res.status(400).json({error:{code:'VALIDATION_ERROR',message:'Product intent is too short.'}});return}
-  const quota=await reserveProjectQuota(tenant);if(!quota.ok){res.status(quota.code==='PROJECT_QUOTA_EXCEEDED'?429:402).json({error:{code:quota.code}});return}
-  let quotaCommitted=false;
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const intentHash=createHash('sha256').update(intent).digest('hex');
+  const claim=await sql.begin(async tx=>{
+   const rows=await tx.unsafe("select state,intent_hash,run_id,target_repository,last_error,updated_at from factory_run_requests where tenant_id=$1 and idempotency_key=$2 for update",[tenant,idempotencyKey]);
+   const row=rows[0];
+   if(row){
+    if(String(row.intent_hash)!==intentHash)return {kind:'conflict' as const};
+    if(row.state==='ready'&&row.run_id)return {kind:'ready' as const,runId:String(row.run_id),targetRepository:String(row.target_repository??'')};
+    if(row.state==='creating')return {kind:'creating' as const};
+    await tx.unsafe("update factory_run_requests set state='creating',last_error=null,updated_at=now() where tenant_id=$1 and idempotency_key=$2",[tenant,idempotencyKey]);
+    return {kind:'claimed' as const};
+   }
+   await tx.unsafe("insert into factory_run_requests(tenant_id,idempotency_key,intent_hash,state) values($1,$2,$3,'creating')",[tenant,idempotencyKey,intentHash]);
+   return {kind:'claimed' as const};
+  });
+  if(claim.kind==='conflict'){res.status(409).json({error:{code:'IDEMPOTENCY_KEY_REUSED'}});return}
+  if(claim.kind==='ready'){const existing=await sql`select name from factory_runs where id=${claim.runId} and tenant_id=${tenant} limit 1`;res.status(200).json({data:{runId:claim.runId,name:String(existing[0]?.name??''),targetRepository:claim.targetRepository,status:'EXISTING'},meta:{idempotentReplay:true}});return}
+  if(claim.kind==='creating'){res.status(409).json({error:{code:'RUN_CREATION_IN_PROGRESS'},meta:{retryable:true}});return}
+
+  const quota=await reserveProjectQuota(tenant);if(!quota.ok){await sql`update factory_run_requests set state='failed',last_error=${quota.code},updated_at=now() where tenant_id=${tenant} and idempotency_key=${idempotencyKey}`;res.status(quota.code==='PROJECT_QUOTA_EXCEEDED'?429:402).json({error:{code:quota.code}});return}
+  let quotaCommitted=false,targetRepository='',issueNumber:number|null=null,repoCreated=false;
   try{
-  const productName=cleanName(intent); const repositorySuffix=randomBytes(4).toString('hex'); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName).slice(0,44)}-${repositorySuffix}`;
-  let targetRepository=`alnatourm/${repoName}`;
-  const repoCheck=await fetch(`https://api.github.com/repos/${targetRepository}`,{headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}});
-  if(repoCheck.status===404){
-    const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:true,auto_init:true})});
-    if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
-    const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository;
-  } else if(!repoCheck.ok) throw new Error(`GITHUB_${repoCheck.status}_CHECK_TARGET_REPOSITORY`);
-  const body=`Factory run metadata is stored authoritatively in PostgreSQL.\n\nProduct: ${productName}\nSource: Product Owner Dashboard`;
-  const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
-  const issue=await response.json() as Issue;
-  const runId=`factory-work:${issue.number}`;
-  if(!sql) throw new Error('FACTORY_RUN_DATABASE_REQUIRED');
-  await sql`insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,idempotency_key) values(${runId},${tenant},${issue.number},${productName},${intent},${targetRepository},${typeof req.body?.priority==='string'?req.body.priority:'Normal'},${typeof req.body?.market==='string'?req.body.market:''},${typeof req.body?.language==='string'?req.body.language:''},${idempotencyKey||null})`;
-  const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
-  await persistBrain(tenant,runId,'requirements',intake);
-  await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
-  quotaCommitted=true;res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
+   const productName=cleanName(intent); const repositorySuffix=randomBytes(4).toString('hex'); const repoName=`factory-${safeTenantSlug(tenant)}-${slugify(productName).slice(0,44)}-${repositorySuffix}`;
+   targetRepository=`alnatourm/${repoName}`;
+   const created=await fetch('https://api.github.com/user/repos',{method:'POST',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},body:JSON.stringify({name:repoName,description:`OGroup AI Factory product: ${productName}`,private:true,auto_init:true})});
+   if(!created.ok) throw new Error(`GITHUB_${created.status}_CREATE_TARGET_REPOSITORY`);
+   const repo=await created.json() as {full_name?:string}; targetRepository=repo.full_name||targetRepository; repoCreated=true;
+   await sql`update factory_run_requests set target_repository=${targetRepository},updated_at=now() where tenant_id=${tenant} and idempotency_key=${idempotencyKey}`;
+
+   const body=`Factory run metadata is stored authoritatively in PostgreSQL.\n\nProduct: ${productName}\nSource: Product Owner Dashboard`;
+   const response=await github('/issues',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:`Factory product: ${productName.slice(0,72)}`,body,labels:['factory-work']})});
+   if(!response.ok) throw new Error(`GITHUB_${response.status}_CREATE_FACTORY_ISSUE`);
+   const issue=await response.json() as Issue; issueNumber=issue.number;
+   const runId=`factory-work:${issue.number}`;
+   await sql.begin(async tx=>{
+    await tx.unsafe("insert into factory_runs(id,tenant_id,issue_number,name,intent,target_repository,priority,market,language,idempotency_key) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",[runId,tenant,issue.number,productName,intent,targetRepository,typeof req.body?.priority==='string'?req.body.priority:'Normal',typeof req.body?.market==='string'?req.body.market:'',typeof req.body?.language==='string'?req.body.language:'',idempotencyKey]);
+    await tx.unsafe("update factory_run_requests set state='ready',run_id=$3,issue_number=$4,target_repository=$5,last_error=null,updated_at=now() where tenant_id=$1 and idempotency_key=$2",[tenant,idempotencyKey,runId,issue.number,targetRepository]);
+   });
+   const intake={intent,priority:typeof req.body?.priority==='string'?req.body.priority:'Normal',market:typeof req.body?.market==='string'?req.body.market:'',language:typeof req.body?.language==='string'?req.body.language:'',references:Array.isArray(req.body?.references)?req.body.references.filter((x:unknown)=>typeof x==='string'):[],source:typeof req.body?.source==='string'?req.body.source:'product-owner-dashboard'};
+   await persistBrain(tenant,runId,'requirements',intake);
+   await persistBrain(tenant,runId,'tasks',{status:'queued',next:'product-definition',createdAt:new Date().toISOString()});
+   quotaCommitted=true;res.status(202).json({data:{runId,name:productName,targetRepository,status:'QUEUED'},meta:{brainInitialized:true}});
+  }catch(error){
+   const message=error instanceof Error?error.message:'RUN_CREATION_FAILED';
+   if(issueNumber!==null){try{await github(`/issues/${issueNumber}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:'closed',state_reason:'not_planned'})})}catch{}}
+   if(repoCreated&&targetRepository){try{await fetch(`https://api.github.com/repos/${targetRepository}`,{method:'DELETE',headers:{Accept:'application/vnd.github+json',Authorization:`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'}})}catch{}}
+   await sql`update factory_run_requests set state='failed',last_error=${message.slice(0,500)},updated_at=now() where tenant_id=${tenant} and idempotency_key=${idempotencyKey}`;
+   throw error;
   }finally{if(!quotaCommitted)await releaseProjectQuota(tenant,quota.periodKey)}
  }catch(e){next(e)}
 });
