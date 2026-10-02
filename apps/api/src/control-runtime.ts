@@ -415,6 +415,19 @@ app.post('/api/v1/factory/runs',async(req,res,next)=>{
  }catch(e){next(e)}
 });
 
+app.put('/api/v1/factory/runs/:runId/deployment-target',async(req,res,next)=>{
+ try{
+  const tenant=requireTenant(req,res);if(!tenant)return;if(!(await requirePermission(req,res,'factory.config.manage')))return;
+  if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return}
+  const railwayProjectId=typeof req.body?.railwayProjectId==='string'?req.body.railwayProjectId.trim():'';
+  const railwayServiceId=typeof req.body?.railwayServiceId==='string'?req.body.railwayServiceId.trim():'';
+  if(!railwayProjectId||!railwayServiceId){res.status(400).json({error:{code:'DEPLOYMENT_TARGET_REQUIRED'}});return}
+  const rows=await sql`update factory_runs set railway_project_id=${railwayProjectId},railway_service_id=${railwayServiceId},updated_at=now() where id=${req.params.runId} and tenant_id=${tenant} returning id`;
+  if(!rows[0]){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return}
+  res.json({data:{runId:req.params.runId,provider:'railway',railwayProjectId,railwayServiceId},meta:{source:'postgres'}});
+ }catch(e){next(e)}
+});
+
 app.get('/api/v1/factory/runs/:runId',async(req,res,next)=>{ try{ const tenant=requireTenant(req,res); if(!tenant)return; if(!sql){res.status(503).json({error:{code:'FACTORY_RUN_DATABASE_REQUIRED'}});return} const rows=await sql`select id,issue_number,name,intent,target_repository,updated_at from factory_runs where id=${req.params.runId} and tenant_id=${tenant} limit 1`; const run=rows[0]; if(!run){res.status(404).json({error:{code:'RUN_NOT_FOUND'}});return} const [ir,cr]=await Promise.all([github(`/issues/${run.issue_number}`),github(`/issues/${run.issue_number}/comments?per_page=100`)]); const issue=await ir.json() as Issue; const comments=await cr.json() as Comment[]; res.json({data:{id:String(run.id),name:String(run.name),intent:String(run.intent),targetRepository:String(run.target_repository),status:statusOf(issue),updatedAt:String(run.updated_at),activity:comments.map(c=>({id:c.id,text:c.body||'',at:c.created_at,actor:c.user?.login||'factory'}))},meta:{source:'postgres+github-evidence'}}); }catch(e){next(e)} });
 
 app.get('/internal/v1/factory/runs/:runId',async(req,res,next)=>{
